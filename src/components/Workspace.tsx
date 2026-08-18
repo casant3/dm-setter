@@ -4,6 +4,8 @@ import { useCallback, useEffect, useState } from "react";
 import { api, type AppStatus, type LeadDetail } from "@/lib/client";
 import type { AgentResult, Lead, LeadListItem, NewLeadInput, Sender, SuggestionFeedback } from "@/lib/types";
 import { ConversationView } from "@/components/ConversationView";
+import { CorpusPanel } from "@/components/CorpusPanel";
+import { MemoryPanel } from "@/components/MemoryPanel";
 import { CopilotPanel } from "@/components/CopilotPanel";
 import { ImportDialog } from "@/components/ImportDialog";
 import { LeadsSidebar } from "@/components/LeadsSidebar";
@@ -23,6 +25,8 @@ export function Workspace() {
 
   const [showNewLead, setShowNewLead] = useState(false);
   const [showImport, setShowImport] = useState(false);
+  const [showCorpus, setShowCorpus] = useState(false);
+  const [rightTab, setRightTab] = useState<"copilot" | "memory">("copilot");
 
   const refreshLeads = useCallback(async () => {
     const { leads: next } = await api.listLeads();
@@ -95,6 +99,20 @@ export function Workspace() {
     if (feedback !== "rejected") setResult(null);
   };
 
+  const correctMemory = async (patch: Record<string, string[] | number>) => {
+    if (!selectedId) return;
+    const res = await fetch(`/api/leads/${selectedId}/memory`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(patch),
+    });
+    if (!res.ok) {
+      const payload = await res.json().catch(() => ({}));
+      throw new Error((payload as { error?: string }).error ?? "Could not save the correction");
+    }
+    await refreshDetail(selectedId);
+  };
+
   const createLead = async (input: NewLeadInput) => {
     const { lead } = await api.createLead(input);
     await refreshLeads();
@@ -118,6 +136,16 @@ export function Workspace() {
         )}
         <span className="spacer" />
         {topError && <span className="error">{topError}</span>}
+        <button className="btn small ghost" onClick={() => setShowCorpus(true)}>Corpus</button>
+        <button
+          className="btn small ghost"
+          onClick={async () => {
+            await fetch("/api/auth", { method: "DELETE" });
+            window.location.href = "/login";
+          }}
+        >
+          Sign out
+        </button>
       </header>
 
       <div className="columns">
@@ -147,17 +175,46 @@ export function Workspace() {
           </section>
         )}
 
-        <CopilotPanel
-          result={result}
-          history={detail?.suggestions ?? []}
-          generating={generating}
-          error={genError}
-          engine={status}
-          onGenerate={() => void generate()}
-          onFeedback={sendFeedback}
-        />
+        {rightTab === "copilot" ? (
+          <CopilotPanel
+            result={result}
+            history={detail?.suggestions ?? []}
+            generating={generating}
+            error={genError}
+            engine={status}
+            tab={rightTab}
+            onTabChange={setRightTab}
+            onGenerate={() => void generate()}
+            onFeedback={sendFeedback}
+          />
+        ) : (
+          <section className="column" aria-label="Lead memory">
+            <div className="column-header">
+              <button className="chip" aria-pressed={false} onClick={() => setRightTab("copilot")}>Copilot</button>
+              <button className="chip" aria-pressed>Memory</button>
+            </div>
+            <div className="column-body">
+              <div className="copilot">
+                <MemoryPanel
+                  memory={detail?.memory ?? null}
+                  understanding={
+                    result
+                      ? {
+                          level: result.understanding.level,
+                          service_explained: result.understanding.service_explained,
+                          confusion_reason: result.understanding.confusion_reason,
+                        }
+                      : null
+                  }
+                  onCorrect={correctMemory}
+                />
+              </div>
+            </div>
+          </section>
+        )}
       </div>
 
+      {showCorpus && <CorpusPanel onClose={() => setShowCorpus(false)} />}
       {showNewLead && <NewLeadDialog onClose={() => setShowNewLead(false)} onCreate={createLead} />}
       {showImport && detail && (
         <ImportDialog

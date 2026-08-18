@@ -80,6 +80,9 @@ export interface Store {
   /** Historical corpus, used by the ingestion pipeline and the verification UI. */
   listSourceConversations(status?: string): Promise<SourceConversation[]>;
   getSourceConversation(id: string): Promise<SourceConversation | null>;
+  /** Ingestion path: never overwrites a transcript a human has verified. */
   upsertSourceConversation(row: Partial<SourceConversation> & { external_card_id: string }): Promise<SourceConversation>;
+  /** Human-edit path: a person may always correct their own verified transcript. */
+  updateSourceConversation(id: string, patch: Partial<SourceConversation>): Promise<SourceConversation>;
   replaceChunksForConversation(conversationId: string, chunks: Omit<ConversationChunk, "id" | "similarity">[]): Promise<number>;
 }

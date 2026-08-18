@@ -1,10 +1,14 @@
 import { getStore } from "@/lib/store";
 import { fail, handleError, ok, readJson } from "@/lib/api";
+import { requireAuth } from "@/lib/auth";
 import { PRIORITIES, type NewLeadInput } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 
 export async function GET() {
+  const denied = await requireAuth();
+  if (denied) return denied;
+
   try {
     const store = getStore();
     return ok({ leads: await store.listLeads(), store_mode: store.mode });
@@ -14,6 +18,9 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
+  const denied = await requireAuth();
+  if (denied) return denied;
+
   try {
     const body = await readJson<NewLeadInput>(request);
     const handle = String(body.instagram_handle ?? "")

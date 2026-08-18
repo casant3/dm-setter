@@ -316,6 +316,13 @@ export class SupabaseStore implements Store {
     );
   }
 
+  async updateSourceConversation(id: string, patch: Partial<SourceConversation>): Promise<SourceConversation> {
+    return unwrapOne(
+      await getDb().from("source_conversations").update(patch).eq("id", id).select("*").single(),
+      "updateSourceConversation",
+    );
+  }
+
   async replaceChunksForConversation(
     conversationId: string,
     chunks: Omit<ConversationChunk, "id" | "similarity">[],

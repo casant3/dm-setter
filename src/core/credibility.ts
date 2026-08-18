@@ -11,11 +11,24 @@ import type { CredibilityAsset, Lead, Strategy } from "@/lib/types";
 export const MIN_ASSETS = 2;
 export const MAX_ASSETS = 5;
 
+/**
+ * Common words carry no matching signal. Without this filter an asset could score
+ * a match purely on words like "for" or "the" and leak into context as relevant.
+ */
+const STOPWORDS = new Set([
+  "the", "and", "for", "with", "that", "this", "from", "they", "them", "their", "our", "you", "your",
+  "are", "was", "were", "been", "has", "have", "had", "not", "but", "all", "any", "can", "who", "how",
+  "what", "when", "which", "into", "over", "out", "off", "than", "then", "there", "here", "some",
+  "more", "most", "other", "such", "only", "own", "same", "will", "would", "could", "should", "about",
+  "before", "after", "real", "must", "may", "get", "got", "one", "two", "new", "now", "use", "used",
+  "team", "work", "working", "help", "helped", "helping", "client", "clients", "record", "records",
+]);
+
 function tokens(value: string | null | undefined): string[] {
   return (value ?? "")
     .toLowerCase()
     .split(/[^a-z0-9]+/)
-    .filter((t) => t.length > 2);
+    .filter((t) => t.length > 2 && !STOPWORDS.has(t));
 }
 
 function overlapScore(a: string[], b: string[]): number {
@@ -53,8 +66,13 @@ export function rankCredibility(
     score += overlapScore(gap, claim) * 1.2;
     score += overlapScore(objective, claim) * 0.6;
 
-    // A case study proves an outcome; prefer it when we are building value.
-    if (asset.asset_type === "case_study" && strategy.qualification.value_established < 2) score += 0.4;
+    // A case study proves an outcome, so prefer it while we are building value —
+    // but only as a tie-break between assets that already match this prospect.
+    // Applying it unconditionally would give an unrelated asset a positive score
+    // and leak it into context.
+    if (score > 0 && asset.asset_type === "case_study" && strategy.qualification.value_established < 2) {
+      score += 0.4;
+    }
 
     return { ...asset, relevance: Number(score.toFixed(4)) };
   });

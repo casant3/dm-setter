@@ -1,5 +1,6 @@
 import { getStore } from "@/lib/store";
 import { fail, handleError, ok, readJson } from "@/lib/api";
+import { requireAuth } from "@/lib/auth";
 import { FOLLOWUP_STATUSES, PRIORITIES, type Lead } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -32,6 +33,9 @@ const EDITABLE = new Set<keyof Lead>([
 ]);
 
 export async function GET(_request: Request, { params }: Params) {
+  const denied = await requireAuth();
+  if (denied) return denied;
+
   try {
     const { id } = await params;
     const store = getStore();
@@ -51,6 +55,9 @@ export async function GET(_request: Request, { params }: Params) {
 }
 
 export async function PATCH(request: Request, { params }: Params) {
+  const denied = await requireAuth();
+  if (denied) return denied;
+
   try {
     const { id } = await params;
     const body = await readJson<Partial<Lead>>(request);

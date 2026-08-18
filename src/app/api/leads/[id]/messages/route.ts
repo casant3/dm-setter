@@ -1,5 +1,6 @@
 import { getStore } from "@/lib/store";
 import { fail, handleError, ok, readJson } from "@/lib/api";
+import { requireAuth } from "@/lib/auth";
 import type { NewMessageInput, Sender } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -9,6 +10,9 @@ type Params = { params: Promise<{ id: string }> };
 const SENDERS: Sender[] = ["setter", "prospect", "system"];
 
 export async function GET(_request: Request, { params }: Params) {
+  const denied = await requireAuth();
+  if (denied) return denied;
+
   try {
     const { id } = await params;
     return ok({ messages: await getStore().listMessages(id) });
@@ -18,6 +22,9 @@ export async function GET(_request: Request, { params }: Params) {
 }
 
 export async function POST(request: Request, { params }: Params) {
+  const denied = await requireAuth();
+  if (denied) return denied;
+
   try {
     const { id } = await params;
     const body = await readJson<{ messages?: NewMessageInput[] } & NewMessageInput>(request);

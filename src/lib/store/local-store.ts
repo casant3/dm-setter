@@ -416,6 +416,15 @@ export class LocalStore implements Store {
     });
   }
 
+  async updateSourceConversation(id: string, patch: Partial<SourceConversation>): Promise<SourceConversation> {
+    return this.transact((db) => {
+      const row = db.source_conversations.find((s) => s.id === id);
+      if (!row) throw new Error(`Source conversation not found: ${id}`);
+      Object.assign(row, patch, { id });
+      return row;
+    });
+  }
+
   async replaceChunksForConversation(
     conversationId: string,
     chunks: Omit<ConversationChunk, "id" | "similarity">[],

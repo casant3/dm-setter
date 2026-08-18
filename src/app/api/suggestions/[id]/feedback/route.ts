@@ -1,5 +1,6 @@
 import { applyExchangeToMemory } from "@/core/memory";
 import { fail, handleError, ok, readJson } from "@/lib/api";
+import { requireAuth } from "@/lib/auth";
 import { getStore } from "@/lib/store";
 import { SUGGESTION_FEEDBACK, type SuggestionFeedback } from "@/lib/types";
 
@@ -18,6 +19,9 @@ type Body = {
 
 /** Records Used / Edited / Rejected against a suggestion, closing the feedback loop. */
 export async function POST(request: Request, { params }: Params) {
+  const denied = await requireAuth();
+  if (denied) return denied;
+
   try {
     const { id } = await params;
     const body = await readJson<Body>(request);

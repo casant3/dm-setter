@@ -51,6 +51,8 @@ export function CopilotPanel({
   generating,
   error,
   engine,
+  tab,
+  onTabChange,
   onGenerate,
   onFeedback,
 }: {
@@ -59,6 +61,8 @@ export function CopilotPanel({
   generating: boolean;
   error: string | null;
   engine: { openai_configured: boolean; setter_model: string } | null;
+  tab: "copilot" | "memory";
+  onTabChange: (tab: "copilot" | "memory") => void;
   onGenerate: () => void;
   onFeedback: (feedback: SuggestionFeedback, finalMessage: string | null) => Promise<void>;
 }) {
@@ -91,7 +95,8 @@ export function CopilotPanel({
   return (
     <section className="column" aria-label="AI Copilot">
       <div className="column-header">
-        <span className="column-title">AI Copilot</span>
+        <button className="chip" aria-pressed={tab === "copilot"} onClick={() => onTabChange("copilot")}>Copilot</button>
+        <button className="chip" aria-pressed={tab === "memory"} onClick={() => onTabChange("memory")}>Memory</button>
         {result && <span className="badge accent">{result.strategy.stage}</span>}
         <span style={{ flex: 1 }} />
         <button className="btn small primary" onClick={onGenerate} disabled={generating}>
@@ -207,9 +212,16 @@ export function CopilotPanel({
                   <Meter key={key} label={QUALIFICATION_LABELS[key]} value={strategy.qualification[key]} />
                 ))}
                 <div className="total-row">
-                  <span className="muted">Total (9 needed for a call)</span>
+                  <span className="muted">Total (9 needed, every dimension above zero)</span>
                   <span className="total-score">{strategy.total_score}/12</span>
                 </div>
+                {result?.understanding && (
+                  <p className="muted" style={{ marginTop: 8, marginBottom: 0 }}>
+                    Service {result.understanding.service_explained ? "explained" : "not yet explained"} by us ·
+                    understanding evidenced at {result.understanding.level}/2 from their own words
+                    {result.understanding.evidence.length > 0 ? ` (${result.understanding.evidence.length} signal${result.understanding.evidence.length === 1 ? "" : "s"})` : ""}
+                  </p>
+                )}
               </div>
 
               <div className="card">
@@ -229,13 +241,52 @@ export function CopilotPanel({
               </div>
 
               <div className="card">
-                <h3>Similar winners</h3>
+                <h3>Similar strong winners</h3>
+                <p className="muted" style={{ marginTop: -4 }}>Onboarded or closed — the approach to learn from.</p>
                 <Examples chunks={result!.examples.strong_winners} kind="win" />
               </div>
 
+              {result!.examples.partial_wins.length > 0 && (
+                <div className="card">
+                  <h3>Similar partial wins</h3>
+                  <p className="muted" style={{ marginTop: -4 }}>The call happened but did not clearly convert.</p>
+                  <Examples chunks={result!.examples.partial_wins} kind="win" />
+                </div>
+              )}
+
               <div className="card">
                 <h3>Similar failures</h3>
+                <p className="muted" style={{ marginTop: -4 }}>What not to repeat — never a template.</p>
                 <Examples chunks={result!.examples.failures} kind="loss" />
+              </div>
+
+              {result!.examples.voice_examples.length > 0 && (
+                <div className="card">
+                  <h3>Voice reference</h3>
+                  <p className="muted" style={{ marginTop: -4 }}>
+                    Phrasing comes from {result!.examples.voice_examples[0].setter_name}; strategy comes from the winners above.
+                  </p>
+                  {result!.examples.voice_examples.map((c) => (
+                    <div key={c.id} className="example">{c.content}</div>
+                  ))}
+                </div>
+              )}
+
+              <div className="card">
+                <h3>Credibility in play</h3>
+                {result!.credibility_used.length === 0 ? (
+                  <p className="muted" style={{ margin: 0 }}>
+                    No approved asset is relevant to this prospect, so the writer was told to cite nothing.
+                  </p>
+                ) : (
+                  <ul className="list">
+                    {result!.credibility_used.map((c) => (
+                      <li key={c.name}>
+                        <strong>{c.name}</strong> — {c.approved_claim}
+                      </li>
+                    ))}
+                  </ul>
+                )}
               </div>
             </>
           )}

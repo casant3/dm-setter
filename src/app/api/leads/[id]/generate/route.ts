@@ -1,5 +1,6 @@
 import { defaultDeps, runSetterForLead } from "@/core/agent";
 import { fail, handleError, ok, readJson } from "@/lib/api";
+import { requireAuth } from "@/lib/auth";
 import { getStore } from "@/lib/store";
 
 export const dynamic = "force-dynamic";
@@ -15,6 +16,9 @@ type Params = { params: Promise<{ id: string }> };
  * means for a thread where the last word was already theirs.
  */
 export async function POST(request: Request, { params }: Params) {
+  const denied = await requireAuth();
+  if (denied) return denied;
+
   try {
     const { id } = await params;
     const body = await readJson<{ prospect_message?: string }>(request).catch(() => ({}) as { prospect_message?: string });

@@ -1,4 +1,5 @@
 import { fail, handleError, ok, readJson } from "@/lib/api";
+import { requireAuth } from "@/lib/auth";
 import { parseDmTranscript, sequenceTimestamps } from "@/lib/dm-parser";
 import { getStore } from "@/lib/store";
 import type { Sender } from "@/lib/types";
@@ -20,6 +21,9 @@ type Body = {
  * can check the speaker mapping before anything touches the conversation.
  */
 export async function POST(request: Request, { params }: Params) {
+  const denied = await requireAuth();
+  if (denied) return denied;
+
   try {
     const { id } = await params;
     const body = await readJson<Body>(request);

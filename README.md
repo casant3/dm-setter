@@ -34,7 +34,13 @@ The pipeline is unchanged from V1: the same prompt, the same JSON schemas, the s
 
 ### The hard gate
 
-The model proposes; a deterministic gate disposes. `evaluateGate()` blocks a call unless fit, commercial goal and service understanding are all above zero, the qualification total is at least 9/12, and there is no unresolved SERVICE_CONFUSION. When the model wants to book and the gate disagrees, the gate wins and the copilot says so.
+The model proposes; a deterministic gate disposes. `evaluateGate()` blocks a call
+unless **all six** qualification dimensions are above zero, the total is at least
+9/12, and there is no unresolved SERVICE_CONFUSION. A high total never
+compensates for a missing dimension. When the model wants to book and the gate
+disagrees, the gate wins and the copilot says so.
+
+See [`docs/AGENT_BRAIN.md`](docs/AGENT_BRAIN.md) for the full design.
 
 ## The workspace
 
@@ -62,10 +68,13 @@ The model proposes; a deterministic gate disposes. `evaluateGate()` blocks a cal
 ## Setup
 
 1. Create/use a Supabase project.
-2. Run `supabase/schema.sql`, then `supabase/migrations/002_web_app.sql`, in a development database.
+2. Run `supabase/schema.sql`, then `supabase/migrations/002_web_app.sql`, then
+   `supabase/migrations/003_agent_brain.sql`, in a development database.
 3. Copy `.env.example` to `.env` and add server-side credentials.
 4. `npm install`
 5. `npm run seed` — seeds the playbook rules.
+5b. `npm run auth:setup` — generates the password hash and session secret. The app
+   refuses every request in production until these are set.
 6. Add VERIFIED rows to `credibility_assets` (clients/media outlets/case studies). The model is forbidden from inventing them.
 7. Ingest leads/messages/transcripts.
 8. `npm run dev` and open http://localhost:3000.
@@ -87,8 +96,13 @@ Both are development conveniences. Supabase is the source of truth and GPT-5.6 i
 | `npm run build` / `npm start` | production build and serve |
 | `npm run cli` | the original interactive CLI |
 | `npm run seed` | seed playbook rules into Supabase |
-| `npm test` | parser, gate, SERVICE_CONFUSION and feedback-loop tests |
+| `npm test` | the full suite (gate, understanding, memory, retrieval, ingestion, credibility) |
 | `npm run typecheck` | `tsc --noEmit` |
+| `npm run auth:setup` | generate the auth environment values |
+| `npm run ingest:validate` | verify the Trello corpus is complete |
+| `npm run ingest:extract` | derive identity and outcome tiers |
+| `npm run ingest:transcribe` | screenshots → draft transcripts (needs an API key) |
+| `npm run ingest:chunk` | verified transcripts → embedded chunks |
 
 ## API
 
@@ -101,6 +115,12 @@ Both are development conveniences. Supabase is the source of truth and GPT-5.6 i
 | `POST /api/leads/:id/generate` | run the pipeline; returns strategy, gate, draft, reviewer, retrieved examples |
 | `POST /api/leads/:id/import` | parse a pasted thread (preview by default, `commit: true` to write) |
 | `POST /api/suggestions/:id/feedback` | record `used` / `edited` / `rejected` |
+| `GET/PATCH /api/leads/:id/memory` | inspect or correct long-term memory |
+| `GET /api/corpus`, `GET/PATCH /api/corpus/:id` | transcript verification workflow |
+| `GET /api/analytics` | feedback-learning statistics |
+| `GET/POST/DELETE /api/auth` | session status, sign in, sign out |
+
+Every route except `/api/auth` requires an authenticated session.
 
 ## Dataset inventory
 
@@ -114,17 +134,51 @@ The supplied Trello screenshot corpus contains 360 screenshots across 67 prospec
 - Future follow-up: 16 / 86
 - Info Packet Sent: 7 / 36
 
-The code does NOT pretend screenshots have already been perfectly transcribed. The next data step is to create verified transcripts/labels for `source_conversations` and chunk them for retrieval.
+This has been validated against the real archive: **12/12 parts, 67/67 cards,
+360/360 screenshots**, reconciling exactly with the breakdown above.
 
-## Important security note
+The code does NOT pretend screenshots have been transcribed. Transcription
+requires an API key, produces drafts marked `needs_review`, and only a human
+approval makes a conversation eligible for retrieval. See
+[`docs/INGESTION.md`](docs/INGESTION.md).
 
-`SUPABASE_SERVICE_ROLE_KEY` is server-side only. It is read exclusively in API routes and never reaches the browser. The schema enables RLS but intentionally does not create permissive browser policies. **The app currently has no authentication** — put it behind auth before exposing it beyond localhost.
+Analysis of the real corpus found **32 of 67 bookings (48%) were not honoured
+downstream** — the evidence behind the tiered outcome model.
+
+## Security
+
+`SUPABASE_SERVICE_ROLE_KEY` is server-side only. It is read exclusively in API
+routes and never reaches the browser. The schema enables RLS and intentionally
+creates no permissive browser policies.
+
+Every data API route requires an authenticated session (`src/lib/auth.ts`):
+single-operator password auth with an HMAC-signed, httpOnly session cookie. With
+auth unconfigured the app runs open **only** in local development; in production
+it returns 503 rather than exposing prospect data.
+
+Private prospect data — screenshots, board exports, transcripts — lives under the
+git-ignored `data/` directory and in the database. It is never committed. Test
+fixtures are synthetic.
+
+## Deeper documentation
+
+- [`docs/AGENT_BRAIN.md`](docs/AGENT_BRAIN.md) — the gate, the
+  explained/understood split, memory provenance, outcome tiers, retrieval and
+  voice separation.
+- [`docs/INGESTION.md`](docs/INGESTION.md) — the four-stage screenshot pipeline
+  and the transcript verification workflow.
 
 ## What still needs to be connected
 
-- OpenAI API key/billing.
+- OpenAI API key/billing. Without it the app runs on a deterministic offline
+  engine and screenshot transcription cannot run at all.
 - Supabase project credentials.
-- Verified list of approved big-name clients/media outlets and the exact claims allowed.
-- Transcription/structuring of the 360 screenshot corpus into `conversation_chunks` with embeddings — until that exists, winner/failure retrieval has nothing real to draw on.
-- Authentication for the web app.
-- Richer memory summarisation. Memory currently advances deterministically after each accepted exchange (see below); the narrative fields — `relationship_summary`, `facts_known`, `goals`, `pain_points` — are still maintained by hand.
+- Verified rows in `credibility_assets`. The ranker returns nothing when no asset
+  is relevant, and the writer is told to cite nothing — but with an empty table it
+  can never cite anything.
+- Transcription and human verification of the 360-screenshot corpus. Stages 1 and
+  2 have been run against the real dataset (67/67 cards, 360/360 screenshots);
+  stages 3 and 4 need an API key and a human reviewer.
+- Richer narrative memory. Structured memory advances automatically after each
+  accepted exchange; `relationship_summary` and free-text fields are still
+  maintained by hand or corrected in the Memory panel.
