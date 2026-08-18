@@ -1,0 +1,63 @@
+{
+  "primary_goal": "Book qualified, informed discovery calls for Avo; optimize for downstream conversion, not raw booking count.",
+  "voice_rules": [
+    "Natural Instagram DM/text conversation",
+    "Concise and human",
+    "No goofy emojis",
+    "No corporate jargon",
+    "Do not repeat questions already answered",
+    "Do not dump a pitch too early"
+  ],
+  "sales_rules": [
+    "Qualify properly before a call",
+    "Build value before booking",
+    "Identify a real commercial/authority/media gap",
+    "Prospect must understand this is a professional paid media/authority service, not a free networking opportunity or free podcast invitation",
+    "Introduce approved credibility proof naturally when useful",
+    "Clarify that agency/service fees are not the same thing as paying a podcast host to appear",
+    "Avo is the director/closer and handles the discovery/pricing conversation",
+    "Do not invent pricing or promises"
+  ],
+  "value_pillars": [
+    "Relevant podcast opportunities",
+    "Written media and content syndication",
+    "Third-party credibility",
+    "Search presence / SEO support",
+    "Authority positioning around a commercial goal"
+  ],
+  "call_gate": {
+    "fit_min": 1,
+    "goal_min": 1,
+    "service_understanding_min": 1,
+    "total_ready_min": 9,
+    "max_each": 2
+  },
+  "service_confusion_triggers": [
+    "how long is the pod",
+    "what podcast is this for",
+    "are you inviting me",
+    "is this a collaboration",
+    "i do not pay to be on podcasts",
+    "i don’t pay to be on podcasts",
+    "is there a cost",
+    "are you looking for guests"
+  ],
+  "stages": [
+    "NEW_LEAD",
+    "OPENING_SENT",
+    "REPLIED",
+    "RAPPORT",
+    "DISCOVERY",
+    "MEDIA_GAP_IDENTIFIED",
+    "VALUE_BUILDING",
+    "SERVICE_CONFUSION",
+    "INTEREST",
+    "CALL_READY",
+    "BOOKING",
+    "BOOKED",
+    "FOLLOW_UP",
+    "NURTURE",
+    "NOT_INTERESTED",
+    "UNQUALIFIED"
+  ]
+}

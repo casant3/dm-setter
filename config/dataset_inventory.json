@@ -1,0 +1,35 @@
+{
+  "source": "Trello Outbound Acquisition export + trello_attachments_v4.zip",
+  "cards_with_screenshots": 67,
+  "screenshots": 360,
+  "stages": {
+    "📞 Discovery Call": {
+      "prospects": 11,
+      "screenshots": 63
+    },
+    "📞 Onboarding Call": {
+      "prospects": 8,
+      "screenshots": 62
+    },
+    "❌ Not Interested": {
+      "prospects": 9,
+      "screenshots": 43
+    },
+    "⚫ No show": {
+      "prospects": 10,
+      "screenshots": 37
+    },
+    "Nurturing Process (2-4 weeks)": {
+      "prospects": 6,
+      "screenshots": 33
+    },
+    "🕒 Future follow-up": {
+      "prospects": 16,
+      "screenshots": 86
+    },
+    "Info Packet Sent (If prospect asks)": {
+      "prospects": 7,
+      "screenshots": 36
+    }
+  }
+}

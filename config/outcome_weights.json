@@ -1,0 +1,9 @@
+{
+  "Onboarding Call": 1.0,
+  "Discovery Call": 0.6,
+  "Info Packet Sent (If prospect asks)": 0.15,
+  "🕒 Future follow-up": 0.0,
+  "Nurturing Process (2-4 weeks)": -0.15,
+  "⚫ No show": -0.6,
+  "❌ Not Interested": -1.0
+}
