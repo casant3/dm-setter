@@ -11,7 +11,9 @@
     "typecheck": "tsc --noEmit",
     "test": "tsx --test test/*.test.ts",
     "ingest:validate": "tsx scripts/ingest/validate.ts",
-    "ingest:extract": "tsx scripts/ingest/extract.ts"
+    "ingest:extract": "tsx scripts/ingest/extract.ts",
+    "ingest:transcribe": "tsx scripts/ingest/transcribe.ts",
+    "ingest:chunk": "tsx scripts/ingest/chunk.ts"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.45.0",
