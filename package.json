@@ -9,7 +9,9 @@
     "cli": "tsx src/core/cli.ts",
     "seed": "tsx scripts/seed_playbook.ts",
     "typecheck": "tsc --noEmit",
-    "test": "tsx --test test/*.test.ts"
+    "test": "tsx --test test/*.test.ts",
+    "ingest:validate": "tsx scripts/ingest/validate.ts",
+    "ingest:extract": "tsx scripts/ingest/extract.ts"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.45.0",

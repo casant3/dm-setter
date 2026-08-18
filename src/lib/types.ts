@@ -1,6 +1,6 @@
 /**
  * Domain types shared by the agent core, the store adapters and the web UI.
- * These mirror `supabase/schema.sql` plus the additive `002_web_app.sql` migration.
+ * These mirror `supabase/schema.sql` plus the additive migrations.
  */
 
 export type Sender = "setter" | "prospect" | "system";
@@ -21,6 +21,45 @@ export type Priority = (typeof PRIORITIES)[number];
 
 export const SUGGESTION_FEEDBACK = ["used", "edited", "rejected"] as const;
 export type SuggestionFeedback = (typeof SUGGESTION_FEEDBACK)[number];
+
+// ---------------------------------------------------------------------------
+// Historical outcome tiers
+// ---------------------------------------------------------------------------
+
+/**
+ * Downstream quality of a past conversation.
+ *
+ * A booked call is not evidence of a good conversation: some Discovery bookings
+ * in the real corpus later became No Show or Not Interested because the prospect
+ * had not understood the offer. Tiers rank by what actually happened next.
+ */
+export const OUTCOME_TIERS = ["A", "B", "C", "D", "E", "F"] as const;
+export type OutcomeTier = (typeof OUTCOME_TIERS)[number];
+
+export const TIER_DESCRIPTIONS: Record<OutcomeTier, string> = {
+  A: "Onboarded / closed / converted",
+  B: "Qualified discovery that showed or progressed",
+  C: "Discovery booked, downstream outcome unknown",
+  D: "Nurture / future follow-up / info packet",
+  E: "No show",
+  F: "Not interested",
+};
+
+/** How a retrieved example is presented to the writer. */
+export type EvidenceClass = "strong_winner" | "partial_win" | "failure" | "neutral";
+
+export const TIER_EVIDENCE: Record<OutcomeTier, EvidenceClass> = {
+  A: "strong_winner",
+  B: "partial_win",
+  C: "neutral",
+  D: "neutral",
+  E: "failure",
+  F: "failure",
+};
+
+// ---------------------------------------------------------------------------
+// Leads and messages
+// ---------------------------------------------------------------------------
 
 export type Lead = {
   id: string;
@@ -68,27 +107,70 @@ export type Message = {
   ai_suggestion_id: string | null;
 };
 
+// ---------------------------------------------------------------------------
+// Long-term memory
+// ---------------------------------------------------------------------------
+
+/** Where a remembered item came from, so it can be traced back and trusted. */
+export type Provenance = "fact" | "inference" | "human";
+
+/**
+ * One remembered item. Facts are quoted from the prospect; inferences are the
+ * model's reading; human entries are corrections a person made and must not be
+ * silently overwritten.
+ */
+export type MemoryItem = {
+  value: string;
+  provenance: Provenance;
+  /** 0–1. Human corrections are always 1. */
+  confidence: number;
+  /** The message this came from, when it came from one. */
+  source_message_id?: string | null;
+  /** Verbatim supporting quote, when available. */
+  quote?: string | null;
+  recorded_at: string;
+  /** True once a human has confirmed or written this item. */
+  verified?: boolean;
+};
+
 export type LeadMemory = {
   lead_id: string;
   relationship_summary: string | null;
-  facts_known: unknown[];
-  businesses: unknown[];
-  goals: unknown[];
-  pain_points: unknown[];
-  interests: unknown[];
-  objections: unknown[];
-  media_history: unknown[];
-  opportunities_identified: unknown[];
-  questions_already_asked: unknown[];
-  offers_explained: unknown[];
-  ctas_already_used: unknown[];
+  facts_known: MemoryItem[];
+  businesses: MemoryItem[];
+  goals: MemoryItem[];
+  personal_goals: MemoryItem[];
+  pain_points: MemoryItem[];
+  interests: MemoryItem[];
+  objections: MemoryItem[];
+  media_history: MemoryItem[];
+  opportunities_identified: MemoryItem[];
+  questions_already_asked: MemoryItem[];
+  offers_explained: MemoryItem[];
+  ctas_already_used: MemoryItem[];
+  buying_signals: MemoryItem[];
+  timing_constraints: MemoryItem[];
+  followup_commitments: MemoryItem[];
+  key_entities: MemoryItem[];
   communication_style: string | null;
   current_strategy: string | null;
+
+  /** An action we took: we sent an explanation of the business model. */
+  service_explained: boolean | null;
+  service_explained_at: string | null;
+  service_explained_count: number | null;
+
+  /** A state of the prospect, evidenced only by their own messages. */
   service_understanding: number | null;
+  service_understanding_evidence: unknown[];
+
+  /** Fields a human has verified; automatic updates must not overwrite these. */
+  verified_fields: string[];
   updated_at: string | null;
 };
 
 export type ConversationEvent = {
+  id?: string;
   event_type: string;
   description: string;
   importance: number | null;
@@ -96,23 +178,52 @@ export type ConversationEvent = {
 };
 
 export type CredibilityAsset = {
+  id?: string;
   asset_type: "client" | "media_outlet" | "case_study";
   name: string;
   approved_claim: string;
   niches: string[] | null;
+  industries?: string[] | null;
+  /** Set by the ranker, not stored. */
+  relevance?: number;
 };
+
+// ---------------------------------------------------------------------------
+// Retrieval
+// ---------------------------------------------------------------------------
 
 /** A retrieved slice of a past conversation, used as winner/failure evidence. */
 export type ConversationChunk = {
   id: string;
   source_conversation_id: string | null;
   outcome: string | null;
+  outcome_tier: OutcomeTier | null;
   stage: string | null;
   niche: string | null;
+  industry: string | null;
+  setter_name: string | null;
   content: string;
   metadata: Record<string, unknown> | null;
+  quality_score: number | null;
   similarity: number | null;
+  /** Final rank score after structured reranking. */
+  score?: number;
+  /** Human-readable reasons this example was selected, shown in the UI. */
+  match_reasons?: string[];
+  evidence_class?: EvidenceClass;
 };
+
+export type RetrievedExamples = {
+  strong_winners: ConversationChunk[];
+  partial_wins: ConversationChunk[];
+  failures: ConversationChunk[];
+  /** Examples chosen specifically because they are in Cassey's voice. */
+  voice_examples: ConversationChunk[];
+};
+
+// ---------------------------------------------------------------------------
+// Strategy / pipeline
+// ---------------------------------------------------------------------------
 
 export type Qualification = {
   fit: number;
@@ -142,6 +253,8 @@ export type Review = {
   approved: boolean;
   issues: string[];
   final_reply: string;
+  /** What this specific message is for, per the reviewer checklist. */
+  message_purpose?: string;
 };
 
 export type AiSuggestion = {
@@ -164,6 +277,14 @@ export type AiSuggestion = {
   created_at: string;
 };
 
+export type GateResult = {
+  passed: boolean;
+  blockers: string[];
+  missing_dimensions: (keyof Qualification)[];
+  total_score: number;
+  model_said_call_ready: boolean;
+};
+
 /** Everything the copilot panel needs after one generation run. */
 export type AgentResult = {
   suggestion_id: string | null;
@@ -171,16 +292,16 @@ export type AgentResult = {
   reply: string;
   reviewer: Review;
   gate: GateResult;
-  similar_winners: ConversationChunk[];
-  similar_failures: ConversationChunk[];
+  examples: RetrievedExamples;
+  credibility_used: CredibilityAsset[];
+  understanding: {
+    level: number;
+    service_explained: boolean;
+    evidence: unknown[];
+    confusion_reason: string | null;
+  };
   engine: "openai" | "offline";
-};
-
-/** The deterministic hard gate applied on top of the model's own judgement. */
-export type GateResult = {
-  passed: boolean;
-  blockers: string[];
-  model_said_call_ready: boolean;
+  timings: Record<string, number>;
 };
 
 export type LeadListItem = Lead & {
@@ -213,4 +334,33 @@ export type NewMessageInput = {
   sent_at?: string;
   sent_by_ai?: boolean;
   ai_suggestion_id?: string | null;
+};
+
+// ---------------------------------------------------------------------------
+// Historical corpus
+// ---------------------------------------------------------------------------
+
+export const TRANSCRIPT_STATUSES = ["pending_ocr", "needs_review", "verified", "rejected"] as const;
+export type TranscriptStatus = (typeof TRANSCRIPT_STATUSES)[number];
+
+export type SourceConversation = {
+  id: string;
+  source: string;
+  external_card_id: string | null;
+  instagram_handle: string | null;
+  setter_name: string | null;
+  outcome: string | null;
+  outcome_tier: OutcomeTier | null;
+  stage: string | null;
+  transcript: string | null;
+  notes: string | null;
+  screenshot_paths: unknown[];
+  quality_score: number | null;
+  status: TranscriptStatus;
+  /** Movement history from the board, the basis of the downstream tier. */
+  outcome_history: unknown[];
+  labels: Record<string, unknown> | null;
+  verified_by: string | null;
+  verified_at: string | null;
+  created_at: string | null;
 };

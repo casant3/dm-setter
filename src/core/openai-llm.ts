@@ -1,43 +1,79 @@
 import { getOpenAI, reviewModel, setterModel } from "@/core/openai";
-import { SYSTEM_PROMPT } from "@/core/prompts";
+import { REVIEWER_CHECKLIST, SYSTEM_PROMPT } from "@/core/prompts";
+import { record } from "@/core/observability";
 import { reviewSchema, strategySchema } from "@/core/schemas";
 import type { SetterLlm } from "@/core/llm";
 import type { Review, Strategy } from "@/lib/types";
+
+type ResponseLike = { output_text: string; usage?: { input_tokens?: number; output_tokens?: number } };
+
+function logUsage(op: string, model: string, r: ResponseLike, ms: number) {
+  record({ op, model, ms, tokens_in: r.usage?.input_tokens, tokens_out: r.usage?.output_tokens });
+}
 
 /** GPT-5.6 (or whatever OPENAI_MODEL names) running the strategy → reply → review passes. */
 export const openaiLlm: SetterLlm = {
   engine: "openai",
 
   async strategy(_ctx, context) {
-    const r = await getOpenAI().responses.create({
-      model: setterModel(),
+    const model = setterModel();
+    const started = Date.now();
+    const r = (await getOpenAI().responses.create({
+      model,
       instructions: SYSTEM_PROMPT,
-      input: `Analyze the lead state before writing anything. Decide the next sales objective.\n\nCONTEXT\n${context}`,
+      input: `Analyze the lead state before writing anything. Decide the next sales objective.
+
+Score service_understanding ONLY from the prospect's own words. Our own explanation does not raise it. If the prospect has shown confusion about what this is, set service_confusion and score service_understanding 0.
+
+CONTEXT
+${context}`,
       text: {
         format: { type: "json_schema", name: "setter_strategy", strict: true, schema: strategySchema },
       },
-    });
+    })) as ResponseLike;
+    logUsage("openai.strategy", model, r, Date.now() - started);
     return JSON.parse(r.output_text) as Strategy;
   },
 
   async reply(_ctx, context, strategy) {
-    const r = await getOpenAI().responses.create({
-      model: setterModel(),
+    const model = setterModel();
+    const started = Date.now();
+    const r = (await getOpenAI().responses.create({
+      model,
       instructions: SYSTEM_PROMPT,
-      input: `Write ONE exact Instagram DM for Cassey to send next. No explanation. Follow the strategy and the actual conversation. Do not force a CTA if not call-ready.\n\nSTRATEGY\n${JSON.stringify(strategy, null, 2)}\n\nCONTEXT\n${context}`,
-    });
+      input: `Write ONE exact Instagram DM for Cassey to send next. No explanation, no alternatives. Follow the strategy and the actual conversation. Do not force a CTA if not call-ready. Learn tone from voice_examples and strategy from similar_strong_winners; never imitate similar_failures.
+
+STRATEGY
+${JSON.stringify(strategy, null, 2)}
+
+CONTEXT
+${context}`,
+    })) as ResponseLike;
+    logUsage("openai.write", model, r, Date.now() - started);
     return r.output_text.trim();
   },
 
   async review(_ctx, context, strategy, draft) {
-    const r = await getOpenAI().responses.create({
-      model: reviewModel(),
+    const model = reviewModel();
+    const started = Date.now();
+    const r = (await getOpenAI().responses.create({
+      model,
       instructions: SYSTEM_PROMPT,
-      input: `Audit the proposed reply. Check: already asked/answered; context contradiction; pitching too early; too passive; service confusion unresolved; value not built; credibility invented; unnatural/corporate tone; premature Avo CTA. If any issue exists, rewrite it.\n\nSTRATEGY\n${JSON.stringify(strategy, null, 2)}\n\nDRAFT\n${draft}\n\nCONTEXT\n${context}`,
+      input: `${REVIEWER_CHECKLIST}
+
+STRATEGY
+${JSON.stringify(strategy, null, 2)}
+
+DRAFT
+${draft}
+
+CONTEXT
+${context}`,
       text: {
         format: { type: "json_schema", name: "setter_review", strict: true, schema: reviewSchema },
       },
-    });
+    })) as ResponseLike;
+    logUsage("openai.review", model, r, Date.now() - started);
     return JSON.parse(r.output_text) as Review;
   },
 };

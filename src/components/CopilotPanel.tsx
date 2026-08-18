@@ -230,12 +230,12 @@ export function CopilotPanel({
 
               <div className="card">
                 <h3>Similar winners</h3>
-                <Examples chunks={result!.similar_winners} kind="win" />
+                <Examples chunks={result!.examples.strong_winners} kind="win" />
               </div>
 
               <div className="card">
                 <h3>Similar failures</h3>
-                <Examples chunks={result!.similar_failures} kind="loss" />
+                <Examples chunks={result!.examples.failures} kind="loss" />
               </div>
             </>
           )}

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { detectServiceConfusion } from "@/core/offline-llm";
+import { detectConfusion } from "@/core/understanding";
 
 const CONFUSED = [
   "how long is the pod?",
@@ -27,17 +27,17 @@ const NOT_CONFUSED = [
 
 test("recognises the ways prospects reveal they think this is a guest invitation", () => {
   for (const text of CONFUSED) {
-    assert.ok(detectServiceConfusion(text) !== null, `should flag: ${text}`);
+    assert.ok(detectConfusion(text) !== null, `should flag: ${text}`);
   }
 });
 
 test("does not flag ordinary sales conversation as confusion", () => {
   for (const text of NOT_CONFUSED) {
-    assert.equal(detectServiceConfusion(text), null, `should not flag: ${text}`);
+    assert.equal(detectConfusion(text), null, `should not flag: ${text}`);
   }
 });
 
 test("detection is case-insensitive", () => {
-  assert.ok(detectServiceConfusion("HOW LONG IS THE POD") !== null);
-  assert.ok(detectServiceConfusion("What Podcast Is This For") !== null);
+  assert.ok(detectConfusion("HOW LONG IS THE POD") !== null);
+  assert.ok(detectConfusion("What Podcast Is This For") !== null);
 });

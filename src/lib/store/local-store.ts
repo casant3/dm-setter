@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
+import { emptyMemory } from "@/core/memory";
 import type {
   AiSuggestion,
   ConversationChunk,
@@ -12,8 +13,9 @@ import type {
   Message,
   NewLeadInput,
   NewMessageInput,
+  SourceConversation,
 } from "@/lib/types";
-import type { FeedbackInput, Store, SuggestionDraft } from "@/lib/store/store";
+import type { FeedbackInput, FeedbackStats, Store, SuggestionDraft } from "@/lib/store/store";
 import { seedData } from "@/lib/store/seed";
 
 type Db = {
@@ -22,8 +24,9 @@ type Db = {
   memories: LeadMemory[];
   events: (ConversationEvent & { lead_id: string })[];
   credibility: CredibilityAsset[];
-  chunks: (ConversationChunk & { content: string })[];
+  chunks: ConversationChunk[];
   suggestions: AiSuggestion[];
+  source_conversations: SourceConversation[];
 };
 
 const STOPWORDS = new Set([
@@ -57,7 +60,17 @@ export class LocalStore implements Store {
 
   private async read(): Promise<Db> {
     try {
-      return JSON.parse(await fs.readFile(this.file, "utf8")) as Db;
+      const raw = JSON.parse(await fs.readFile(this.file, "utf8")) as Partial<Db>;
+      return {
+        leads: raw.leads ?? [],
+        messages: raw.messages ?? [],
+        memories: raw.memories ?? [],
+        events: raw.events ?? [],
+        credibility: raw.credibility ?? [],
+        chunks: raw.chunks ?? [],
+        suggestions: raw.suggestions ?? [],
+        source_conversations: raw.source_conversations ?? [],
+      };
     } catch {
       const fresh = seedData();
       await fs.mkdir(path.dirname(this.file), { recursive: true });
@@ -215,26 +228,7 @@ export class LocalStore implements Store {
         Object.assign(existing, patch, { lead_id: leadId });
         return existing;
       }
-      const created: LeadMemory = {
-        lead_id: leadId,
-        relationship_summary: null,
-        facts_known: [],
-        businesses: [],
-        goals: [],
-        pain_points: [],
-        interests: [],
-        objections: [],
-        media_history: [],
-        opportunities_identified: [],
-        questions_already_asked: [],
-        offers_explained: [],
-        ctas_already_used: [],
-        communication_style: null,
-        current_strategy: null,
-        service_understanding: 0,
-        updated_at: new Date().toISOString(),
-        ...patch,
-      };
+      const created: LeadMemory = { ...emptyMemory(leadId), ...patch, lead_id: leadId };
       db.memories.push(created);
       return created;
     });
@@ -254,6 +248,12 @@ export class LocalStore implements Store {
       }));
   }
 
+  async addEvent(leadId: string, event: Omit<ConversationEvent, "id">): Promise<void> {
+    await this.transact((db) => {
+      db.events.push({ ...event, lead_id: leadId });
+    });
+  }
+
   async listCredibility(limit: number): Promise<CredibilityAsset[]> {
     const db = await this.read();
     return db.credibility.slice(0, limit);
@@ -264,6 +264,11 @@ export class LocalStore implements Store {
     return db.suggestions
       .filter((s) => s.lead_id === leadId)
       .sort((a, b) => b.created_at.localeCompare(a.created_at));
+  }
+
+  async getSuggestion(id: string): Promise<AiSuggestion | null> {
+    const db = await this.read();
+    return db.suggestions.find((s) => s.id === id) ?? null;
   }
 
   async createSuggestion(draft: SuggestionDraft): Promise<AiSuggestion> {
@@ -307,14 +312,53 @@ export class LocalStore implements Store {
     });
   }
 
-  async matchChunks(queryText: string, outcomes: string[], limit: number): Promise<ConversationChunk[]> {
+  async feedbackStats(): Promise<FeedbackStats> {
+    const db = await this.read();
+    const withFeedback = db.suggestions.filter((s) => s.feedback);
+
+    const byFeedback = new Map<string, { count: number; total: number }>();
+    const byStage = new Map<string, { used: number; edited: number; rejected: number }>();
+
+    for (const s of withFeedback) {
+      const f = s.feedback!;
+      const fb = byFeedback.get(f) ?? { count: 0, total: 0 };
+      fb.count += 1;
+      fb.total += s.strategy?.total_score ?? 0;
+      byFeedback.set(f, fb);
+
+      const stage = s.strategy?.stage ?? "UNKNOWN";
+      const st = byStage.get(stage) ?? { used: 0, edited: 0, rejected: 0 };
+      st[f] += 1;
+      byStage.set(stage, st);
+    }
+
+    return {
+      by_feedback: [...byFeedback].map(([feedback, v]) => ({
+        feedback,
+        count: v.count,
+        avg_score: v.count ? Number((v.total / v.count).toFixed(2)) : null,
+      })),
+      by_stage: [...byStage].map(([stage, v]) => ({ stage, ...v })),
+      recent_edits: withFeedback
+        .filter((s) => s.feedback === "edited" && s.final_message_sent)
+        .sort((a, b) => (b.feedback_at ?? "").localeCompare(a.feedback_at ?? ""))
+        .slice(0, 25)
+        .map((s) => ({
+          suggested: s.suggested_message,
+          sent: s.final_message_sent!,
+          stage: s.strategy?.stage ?? "UNKNOWN",
+          at: s.feedback_at ?? s.created_at,
+        })),
+    };
+  }
+
+  async matchChunks(queryText: string, limit: number): Promise<ConversationChunk[]> {
     const db = await this.read();
     const query = new Set(tokenize(queryText));
     if (query.size === 0) return [];
     return db.chunks
-      .filter((c) => outcomes.length === 0 || (c.outcome != null && outcomes.includes(c.outcome)))
       .map((c) => {
-        const tokens = new Set(tokenize(`${c.content} ${c.niche ?? ""} ${c.stage ?? ""}`));
+        const tokens = new Set(tokenize(`${c.content} ${c.niche ?? ""} ${c.industry ?? ""} ${c.stage ?? ""}`));
         let overlap = 0;
         for (const t of query) if (tokens.has(t)) overlap += 1;
         const union = new Set([...query, ...tokens]).size;
@@ -323,5 +367,65 @@ export class LocalStore implements Store {
       .filter((c) => (c.similarity ?? 0) > 0)
       .sort((a, b) => (b.similarity ?? 0) - (a.similarity ?? 0))
       .slice(0, limit);
+  }
+
+  async listSourceConversations(status?: string): Promise<SourceConversation[]> {
+    const db = await this.read();
+    const rows = status ? db.source_conversations.filter((s) => s.status === status) : db.source_conversations;
+    return [...rows].sort((a, b) => (a.instagram_handle ?? "").localeCompare(b.instagram_handle ?? ""));
+  }
+
+  async getSourceConversation(id: string): Promise<SourceConversation | null> {
+    const db = await this.read();
+    return db.source_conversations.find((s) => s.id === id) ?? null;
+  }
+
+  async upsertSourceConversation(
+    row: Partial<SourceConversation> & { external_card_id: string },
+  ): Promise<SourceConversation> {
+    return this.transact((db) => {
+      const existing = db.source_conversations.find((s) => s.external_card_id === row.external_card_id);
+      if (existing) {
+        // Never clobber a human-verified transcript with a re-ingest.
+        const protectedFields = existing.status === "verified" ? { transcript: existing.transcript, labels: existing.labels, status: existing.status } : {};
+        Object.assign(existing, row, protectedFields);
+        return existing;
+      }
+      const created: SourceConversation = {
+        id: randomUUID(),
+        source: "trello",
+        instagram_handle: null,
+        setter_name: null,
+        outcome: null,
+        outcome_tier: null,
+        stage: null,
+        transcript: null,
+        notes: null,
+        screenshot_paths: [],
+        quality_score: null,
+        status: "pending_ocr",
+        outcome_history: [],
+        labels: null,
+        verified_by: null,
+        verified_at: null,
+        created_at: new Date().toISOString(),
+        ...row,
+      };
+      db.source_conversations.push(created);
+      return created;
+    });
+  }
+
+  async replaceChunksForConversation(
+    conversationId: string,
+    chunks: Omit<ConversationChunk, "id" | "similarity">[],
+  ): Promise<number> {
+    return this.transact((db) => {
+      db.chunks = db.chunks.filter((c) => c.source_conversation_id !== conversationId);
+      for (const c of chunks) {
+        db.chunks.push({ ...c, id: randomUUID(), similarity: null, source_conversation_id: conversationId });
+      }
+      return chunks.length;
+    });
   }
 }

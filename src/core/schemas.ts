@@ -1,2 +1,98 @@
-export const strategySchema = {"type": "object", "additionalProperties": false, "properties": {"stage": {"type": "string"}, "qualification": {"type": "object", "additionalProperties": false, "properties": {"fit": {"type": "integer", "minimum": 0, "maximum": 2}, "commercial_goal": {"type": "integer", "minimum": 0, "maximum": 2}, "media_gap": {"type": "integer", "minimum": 0, "maximum": 2}, "value_established": {"type": "integer", "minimum": 0, "maximum": 2}, "service_understanding": {"type": "integer", "minimum": 0, "maximum": 2}, "interest_signal": {"type": "integer", "minimum": 0, "maximum": 2}}, "required": ["fit", "commercial_goal", "media_gap", "value_established", "service_understanding", "interest_signal"]}, "total_score": {"type": "integer", "minimum": 0, "maximum": 12}, "call_ready": {"type": "boolean"}, "service_confusion": {"type": "boolean"}, "confusion_reason": {"type": ["string", "null"]}, "next_objective": {"type": "string"}, "strategy": {"type": "string"}, "missing_information": {"type": "array", "items": {"type": "string"}}, "credibility_needed": {"type": "boolean"}, "credibility_reason": {"type": ["string", "null"]}, "should_explain_service": {"type": "boolean"}}, "required": ["stage", "qualification", "total_score", "call_ready", "service_confusion", "confusion_reason", "next_objective", "strategy", "missing_information", "credibility_needed", "credibility_reason", "should_explain_service"]} as const;
-export const reviewSchema = {"type": "object", "additionalProperties": false, "properties": {"approved": {"type": "boolean"}, "issues": {"type": "array", "items": {"type": "string"}}, "final_reply": {"type": "string"}}, "required": ["approved", "issues", "final_reply"]} as const;
+export const strategySchema = {
+  type: "object",
+  additionalProperties: false,
+  properties: {
+    stage: { type: "string" },
+    qualification: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        fit: { type: "integer", minimum: 0, maximum: 2 },
+        commercial_goal: { type: "integer", minimum: 0, maximum: 2 },
+        media_gap: { type: "integer", minimum: 0, maximum: 2 },
+        value_established: { type: "integer", minimum: 0, maximum: 2 },
+        service_understanding: { type: "integer", minimum: 0, maximum: 2 },
+        interest_signal: { type: "integer", minimum: 0, maximum: 2 },
+      },
+      required: ["fit", "commercial_goal", "media_gap", "value_established", "service_understanding", "interest_signal"],
+    },
+    total_score: { type: "integer", minimum: 0, maximum: 12 },
+    call_ready: { type: "boolean" },
+    service_confusion: { type: "boolean" },
+    confusion_reason: { type: ["string", "null"] },
+    next_objective: { type: "string" },
+    strategy: { type: "string" },
+    missing_information: { type: "array", items: { type: "string" } },
+    credibility_needed: { type: "boolean" },
+    credibility_reason: { type: ["string", "null"] },
+    should_explain_service: { type: "boolean" },
+  },
+  required: [
+    "stage",
+    "qualification",
+    "total_score",
+    "call_ready",
+    "service_confusion",
+    "confusion_reason",
+    "next_objective",
+    "strategy",
+    "missing_information",
+    "credibility_needed",
+    "credibility_reason",
+    "should_explain_service",
+  ],
+} as const;
+
+export const reviewSchema = {
+  type: "object",
+  additionalProperties: false,
+  properties: {
+    approved: { type: "boolean" },
+    issues: { type: "array", items: { type: "string" } },
+    final_reply: { type: "string" },
+    message_purpose: { type: "string" },
+  },
+  required: ["approved", "issues", "final_reply", "message_purpose"],
+} as const;
+
+/** Schema for the optional model-driven memory extraction pass. */
+export const memoryExtractionSchema = {
+  type: "object",
+  additionalProperties: false,
+  properties: {
+    relationship_summary: { type: ["string", "null"] },
+    communication_style: { type: ["string", "null"] },
+    businesses: { type: "array", items: { type: "string" } },
+    goals: { type: "array", items: { type: "string" } },
+    personal_goals: { type: "array", items: { type: "string" } },
+    facts_known: { type: "array", items: { type: "string" } },
+    pain_points: { type: "array", items: { type: "string" } },
+    interests: { type: "array", items: { type: "string" } },
+    media_history: { type: "array", items: { type: "string" } },
+    opportunities_identified: { type: "array", items: { type: "string" } },
+    key_entities: { type: "array", items: { type: "string" } },
+    objections: { type: "array", items: { type: "string" } },
+    followup_commitments: { type: "array", items: { type: "string" } },
+    inferences: {
+      type: "array",
+      description: "Items that are reasoned rather than stated outright.",
+      items: { type: "string" },
+    },
+  },
+  required: [
+    "relationship_summary",
+    "communication_style",
+    "businesses",
+    "goals",
+    "personal_goals",
+    "facts_known",
+    "pain_points",
+    "interests",
+    "media_history",
+    "opportunities_identified",
+    "key_entities",
+    "objections",
+    "followup_commitments",
+    "inferences",
+  ],
+} as const;
