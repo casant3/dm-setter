@@ -55,6 +55,8 @@ The model proposes; a deterministic gate disposes. `evaluateGate()` blocks a cal
 
 **Feedback** — every suggestion is stored. *Use as-is*, *Send edited* and *Reject* record which happened; accepting appends the message that was actually sent to the thread, so the store learns the gap between what the agent proposed and what a human sent.
 
+**Memory advances on send** — accepting a suggestion updates `lead_memories`: the questions the DM just asked are recorded so they are never asked twice, explaining the service is logged, the Avo CTA is logged once the gate opens, and `service_understanding` ratchets up as the model gets explained. Fresh SERVICE_CONFUSION resets that score to zero, which re-closes the call gate — so a prospect who reveals late that they thought this was a guest spot cannot stay call-ready.
+
 **Adding leads and importing DMs** — new leads need only a handle. Existing threads can be pasted in: the parser handles `Me:` / `Them:` style, `@handle:` labels, leading timestamps, and Instagram's export format where the sender sits on its own line. Unrecognised speaker labels are surfaced in a preview so they can be mapped before anything is written.
 
 ## Setup
@@ -125,4 +127,4 @@ The code does NOT pretend screenshots have already been perfectly transcribed. T
 - Verified list of approved big-name clients/media outlets and the exact claims allowed.
 - Transcription/structuring of the 360 screenshot corpus into `conversation_chunks` with embeddings — until that exists, winner/failure retrieval has nothing real to draw on.
 - Authentication for the web app.
-- Writing back to `lead_memories` after each exchange; memory is currently read by the pipeline and maintained by hand.
+- Richer memory summarisation. Memory currently advances deterministically after each accepted exchange (see below); the narrative fields — `relationship_summary`, `facts_known`, `goals`, `pain_points` — are still maintained by hand.

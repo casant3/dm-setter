@@ -5,3 +5,5 @@ dist/
 .env.local
 .data/
 *.log
+tsconfig.tsbuildinfo
+next-env.d.ts

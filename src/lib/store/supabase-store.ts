@@ -129,6 +129,18 @@ export class SupabaseStore implements Store {
     return unwrap(await db.from("lead_memories").select("*").eq("lead_id", leadId).maybeSingle(), "getMemory");
   }
 
+  async upsertMemory(leadId: string, patch: Partial<LeadMemory>): Promise<LeadMemory> {
+    const db = getDb();
+    return unwrapOne(
+      await db
+        .from("lead_memories")
+        .upsert({ ...patch, lead_id: leadId }, { onConflict: "lead_id" })
+        .select("*")
+        .single(),
+      "upsertMemory",
+    );
+  }
+
   async listEvents(leadId: string, limit: number): Promise<ConversationEvent[]> {
     const db = getDb();
     return (

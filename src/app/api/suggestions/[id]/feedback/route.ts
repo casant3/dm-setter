@@ -1,3 +1,4 @@
+import { applyExchangeToMemory } from "@/core/memory";
 import { fail, handleError, ok, readJson } from "@/lib/api";
 import { getStore } from "@/lib/store";
 import { SUGGESTION_FEEDBACK, type SuggestionFeedback } from "@/lib/types";
@@ -45,6 +46,16 @@ export async function POST(request: Request, { params }: Params) {
           ai_suggestion_id: suggestion.id,
         },
       ]);
+
+      // The exchange really happened, so permanent memory advances with it.
+      const memory = await store.getMemory(suggestion.lead_id);
+      await store.upsertMemory(
+        suggestion.lead_id,
+        applyExchangeToMemory(memory, suggestion.lead_id, {
+          strategy: suggestion.strategy,
+          sentMessage: finalMessage,
+        }),
+      );
     }
 
     return ok({ suggestion });

@@ -208,6 +208,38 @@ export class LocalStore implements Store {
     return db.memories.find((m) => m.lead_id === leadId) ?? null;
   }
 
+  async upsertMemory(leadId: string, patch: Partial<LeadMemory>): Promise<LeadMemory> {
+    return this.transact((db) => {
+      const existing = db.memories.find((m) => m.lead_id === leadId);
+      if (existing) {
+        Object.assign(existing, patch, { lead_id: leadId });
+        return existing;
+      }
+      const created: LeadMemory = {
+        lead_id: leadId,
+        relationship_summary: null,
+        facts_known: [],
+        businesses: [],
+        goals: [],
+        pain_points: [],
+        interests: [],
+        objections: [],
+        media_history: [],
+        opportunities_identified: [],
+        questions_already_asked: [],
+        offers_explained: [],
+        ctas_already_used: [],
+        communication_style: null,
+        current_strategy: null,
+        service_understanding: 0,
+        updated_at: new Date().toISOString(),
+        ...patch,
+      };
+      db.memories.push(created);
+      return created;
+    });
+  }
+
   async listEvents(leadId: string, limit: number): Promise<ConversationEvent[]> {
     const db = await this.read();
     return db.events

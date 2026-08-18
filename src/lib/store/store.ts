@@ -49,6 +49,8 @@ export interface Store {
   appendMessages(leadId: string, messages: NewMessageInput[]): Promise<Message[]>;
 
   getMemory(leadId: string): Promise<LeadMemory | null>;
+  /** Merges a patch into permanent lead memory, creating the row if absent. */
+  upsertMemory(leadId: string, patch: Partial<LeadMemory>): Promise<LeadMemory>;
   listEvents(leadId: string, limit: number): Promise<ConversationEvent[]>;
   listCredibility(limit: number): Promise<CredibilityAsset[]>;
 
