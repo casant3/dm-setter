@@ -16,10 +16,14 @@ const CONFUSION_TRIGGERS: string[] = playbook.service_confusion_triggers;
 
 const EXTRA_CONFUSION_PATTERNS = [
   /\bwhat (show|podcast) is this\b/i,
-  /\bbe a guest\b/i,
-  /\bcome on the (show|pod)\b/i,
+  /\b(be|being) a guest\b/i,
+  /\bguest (spot|slot|appearance|invite|invitation)\b/i,
+  /\bpodcast (invite|invitation)\b/i,
+  /\binvit(e|ing) me\b/i,
+  /\bcome on (the|your) (show|pod|podcast)\b/i,
   /\bfree\b.*\b(collab|feature|interview)\b/i,
   /\bdon'?t pay to (be on|appear)\b/i,
+  /\bis this a (collab|partnership|podcast)\b/i,
 ];
 
 const VALUE_WORDS = [
