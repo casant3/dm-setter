@@ -148,6 +148,18 @@ function buildReply(ctx: LeadContext, strategy: Strategy): string {
       return `Makes sense, timing is everything. I'll leave it for now — worth me checking back in when that's behind you?`;
     case "clarify_commercial":
       return `Fair question — this is a paid service rather than a free feature. We handle the placements and the positioning around them for clients, and it's priced accordingly.`;
+    case "arrange_logistics":
+      switch (ctx.booking.state) {
+        case "slots_offered":
+          return `No rush — does either of those still work, or is there a better day for you?`;
+        case "slot_selected":
+        case "email_needed":
+          return `Perfect. What's the best email to send the calendar invite to?`;
+        case "invite_pending":
+          return `Sent the invite across — let me know if it hasn't landed.`;
+        default:
+          return `Great — see you then. Avo will take it from there.`;
+      }
     case "clarify_after_brushoff":
       return `No worries — probably worth saying I'm not pitching a guest spot. We build out media and search presence for people so there's third-party proof behind their name. Leave it with you either way.`;
     default:

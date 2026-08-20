@@ -332,6 +332,14 @@ export type AgentResult = {
     violations: { rule: string; detail: string; severity: "hard" | "soft" }[];
     words: number;
   };
+  /** How far into booking this is, and whether the call would be honoured. */
+  booking: {
+    state: string;
+    next_action: string;
+    no_show_risk: string;
+    no_show_factors: string[];
+    no_show_mitigation: string;
+  };
   /** How the prospect is engaging, and what they have already told us. */
   read: {
     temperature: string;

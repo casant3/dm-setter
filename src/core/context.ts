@@ -1,3 +1,4 @@
+import { assessBooking, assessNoShowRisk, type BookingAssessment, type NoShowAssessment } from "@/core/booking";
 import { classifyBrushOff, clarificationAlreadyUsed, type BrushOffAssessment } from "@/core/brush-off";
 import { rankCredibility } from "@/core/credibility";
 import { buildDialogueState, summariseDialogueState, type DialogueState } from "@/core/dialogue-state";
@@ -45,6 +46,10 @@ export type LeadContext = {
   clarificationSpent: boolean;
   /** Evidence behind each qualification dimension. */
   evidence: QualificationEvidence;
+  /** How far into booking this conversation actually is. */
+  booking: BookingAssessment;
+  /** Whether a call booked now would be honoured. */
+  noShow: NoShowAssessment;
   events: ConversationEvent[];
   credibility: CredibilityAsset[];
   examples: RetrievedExamples;
@@ -90,6 +95,12 @@ export async function loadLeadContext(store: Store, leadId: string, newMessage: 
     serviceExplained: Boolean(memory?.service_explained),
   });
 
+  const evidence = assessQualificationEvidence({ lead, memory, messages: withPending, dialogue, understanding });
+  // Booking state is read before the gate runs, because it depends only on what
+  // has already been said — the gate decides whether a call may be raised at
+  // all, not how far an existing booking has got.
+  const booking = assessBooking(withPending, false);
+
   return {
     lead,
     memory,
@@ -101,7 +112,21 @@ export async function loadLeadContext(store: Store, leadId: string, newMessage: 
     temperature: assessTemperature(withPending, dialogue),
     brushOff,
     clarificationSpent: clarificationAlreadyUsed(withPending, brushOff.message_id),
-    evidence: assessQualificationEvidence({ lead, memory, messages: withPending, dialogue, understanding }),
+    evidence,
+    booking,
+    noShow: assessNoShowRisk({
+      messages: withPending,
+      qualification: {
+        fit: evidence.fit.evidenced,
+        commercial_goal: evidence.commercial_goal.evidenced,
+        media_gap: evidence.media_gap.evidenced,
+        value_established: evidence.value_established.evidenced,
+        service_understanding: understanding.level,
+        interest_signal: evidence.interest_signal.evidenced,
+      },
+      dialogue,
+      booking,
+    }),
     events,
     credibility: [],
     examples: { strong_winners: [], partial_wins: [], failures: [], voice_examples: [] },
@@ -279,6 +304,17 @@ export function compactContext(ctx: LeadContext): string {
         why: d.reason,
         quotes: d.quotes,
       })),
+      booking_state: {
+        state: ctx.booking.state,
+        next_action: ctx.booking.next_action,
+        evidence: ctx.booking.evidence,
+        note: "Booking is a sequence. Get only the one thing this state needs. Never re-propose a call that has already been agreed.",
+      },
+      no_show_risk: {
+        risk: ctx.noShow.risk,
+        factors: ctx.noShow.factors,
+        mitigation: ctx.noShow.mitigation,
+      },
       qualification_evidence_note:
         "Score each dimension from this evidence. If you score above what the evidence supports, you must supply the exact quote that justifies it in `evidence`; unverifiable quotes are discarded and the score is capped.",
       message_plan: ctx.plan

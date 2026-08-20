@@ -1,4 +1,4 @@
-import { applyExchangeToMemory } from "@/core/memory";
+import { recordExchange } from "@/core/agent";
 import { fail, handleError, ok, readJson } from "@/lib/api";
 import { requireAuth } from "@/lib/auth";
 import { getStore } from "@/lib/store";
@@ -51,15 +51,9 @@ export async function POST(request: Request, { params }: Params) {
         },
       ]);
 
-      // The exchange really happened, so permanent memory advances with it.
-      const memory = await store.getMemory(suggestion.lead_id);
-      await store.upsertMemory(
-        suggestion.lead_id,
-        applyExchangeToMemory(memory, suggestion.lead_id, {
-          strategy: suggestion.strategy,
-          sentMessage: finalMessage,
-        }),
-      );
+      // The exchange really happened, so permanent memory advances with it —
+      // deterministically first, then the model-driven extraction pass.
+      await recordExchange(store, suggestion.lead_id, suggestion.strategy, finalMessage);
     }
 
     return ok({ suggestion });

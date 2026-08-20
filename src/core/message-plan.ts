@@ -1,3 +1,4 @@
+import type { BookingAssessment, NoShowAssessment } from "@/core/booking";
 import { TOPIC_LABELS, nextBestTopic, type DialogueState, type Topic } from "@/core/dialogue-state";
 import { countQuestions } from "@/core/style";
 import type { BrushOffAssessment } from "@/core/brush-off";
@@ -64,8 +65,10 @@ export function planMessage(input: {
   temperature: TemperatureAssessment;
   gate: GateResult;
   clarificationSpent: boolean;
+  booking: BookingAssessment;
+  noShow: NoShowAssessment;
 }): MessagePlan {
-  const { dialogue, understanding, brushOff, temperature, gate, clarificationSpent } = input;
+  const { dialogue, understanding, brushOff, temperature, gate, clarificationSpent, booking, noShow } = input;
 
   const base = {
     forbidden: [] as { move: Move; why: string }[],
@@ -147,16 +150,43 @@ export function planMessage(input: {
     };
   }
 
+  // Past the gate, the booking substate decides the move: a conversation that
+  // has already had slots offered must not be sent another pitch for a call.
+  if (booking.state !== "not_ready" && booking.state !== "call_ready") {
+    return {
+      ...base,
+      move: "arrange_logistics",
+      purpose: booking.next_action,
+      desired_response:
+        booking.state === "slot_selected" || booking.state === "email_needed"
+          ? "Their email address."
+          : booking.state === "slots_offered"
+            ? "A specific day and time."
+            : "Confirmation that it is in their calendar.",
+      next_if_positive:
+        booking.state === "invite_pending" || booking.state === "booked"
+          ? "Nothing further. It is Avo's conversation now."
+          : "Move straight to the next missing detail — do not re-sell.",
+      next_if_negative: "Offer one alternative. If that fails, agree to revisit rather than chase.",
+      next_if_no_reply: "One short nudge restating the specific time, then leave it.",
+      forbidden: [
+        { move: "build_value", why: "The value is accepted — more of it now reads as doubt." },
+        { move: "ask_discovery", why: "Discovery after a slot is agreed only reopens the decision." },
+      ],
+    };
+  }
+
   if (gate.passed) {
-    if (dialogue.topics.call_scheduling.answered && !dialogue.topics.contact_details.answered) {
+    if (noShow.risk === "high") {
       return {
         ...base,
-        move: "arrange_logistics",
-        purpose: "Get the last detail needed to send the invite.",
-        desired_response: "Their email address or a confirmed slot.",
-        next_if_positive: "Send the invite and confirm it.",
-        next_if_negative: "Offer an alternative time or channel.",
-        next_if_no_reply: "One short nudge with the specific slot restated.",
+        move: "build_value",
+        purpose: `The gate is open but this booking would probably not be honoured: ${noShow.factors[0]}`,
+        desired_response: "Something concrete about their own goal, in their own words.",
+        next_if_positive: "Now propose the call.",
+        next_if_negative: "Find out what is actually missing before booking anything.",
+        next_if_no_reply: "Leave it. A call booked into this would no-show.",
+        forbidden: [{ move: "offer_call", why: noShow.mitigation }],
       };
     }
     return {

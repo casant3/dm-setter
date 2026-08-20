@@ -1,7 +1,8 @@
 import { getOpenAI, reviewModel, setterModel } from "@/core/openai";
 import { REVIEWER_CHECKLIST, SYSTEM_PROMPT } from "@/core/prompts";
 import { record } from "@/core/observability";
-import { reviewSchema, strategySchema } from "@/core/schemas";
+import { EXTRACTION_INSTRUCTIONS, type ExtractedMemory } from "@/core/memory-extract";
+import { memoryExtractionSchema, reviewSchema, strategySchema } from "@/core/schemas";
 import type { SetterLlm } from "@/core/llm";
 import type { Review, Strategy } from "@/lib/types";
 
@@ -81,5 +82,23 @@ ${context}`,
     })) as ResponseLike;
     logUsage("openai.review", model, r, Date.now() - started);
     return JSON.parse(r.output_text) as Review;
+  },
+
+  async extractMemory(transcript) {
+    const model = reviewModel();
+    const started = Date.now();
+    const r = (await getOpenAI().responses.create({
+      model,
+      instructions: SYSTEM_PROMPT,
+      input: `${EXTRACTION_INSTRUCTIONS}
+
+CONVERSATION
+${transcript}`,
+      text: {
+        format: { type: "json_schema", name: "memory_extraction", strict: true, schema: memoryExtractionSchema },
+      },
+    })) as ResponseLike;
+    logUsage("openai.memory", model, r, Date.now() - started);
+    return JSON.parse(r.output_text) as ExtractedMemory;
   },
 };

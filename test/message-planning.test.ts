@@ -5,6 +5,7 @@ import { assessQualificationEvidence, reconcileQualification, verifyQuote } from
 import { assessStyle, countWords } from "@/core/style";
 import { auditMoves, planMessage } from "@/core/message-plan";
 import { auditDraft } from "@/core/audit";
+import { assessBooking, assessNoShowRisk } from "@/core/booking";
 import { assessMotivation } from "@/core/motivation";
 import { classifyBrushOff } from "@/core/brush-off";
 import { assessTemperature } from "@/core/temperature";
@@ -232,6 +233,8 @@ function planFor(messages: Message[], gateResult: GateResult, opts: { clarificat
   const prospect = messages.filter((m) => m.sender === "prospect");
   const understanding = assessUnderstanding(prospect, false);
   const dialogue = buildDialogueState(messages, null);
+  const booking = assessBooking(messages, gateResult.passed);
+  const qualification = gateResult.passed ? FULL : { ...FULL, commercial_goal: 0 };
   return planMessage({
     dialogue,
     understanding,
@@ -242,6 +245,8 @@ function planFor(messages: Message[], gateResult: GateResult, opts: { clarificat
     temperature: assessTemperature(messages, dialogue),
     gate: gateResult,
     clarificationSpent: opts.clarificationSpent ?? false,
+    booking,
+    noShow: assessNoShowRisk({ messages, qualification, dialogue, booking }),
   });
 }
 
@@ -280,6 +285,7 @@ test("an informed rejection plans a stop, not another attempt", () => {
   const prospect = messages.filter((m) => m.sender === "prospect");
   const understanding = assessUnderstanding(prospect, true);
   const dialogue = buildDialogueState(messages, null);
+  const booking = assessBooking(messages, false);
   const p = planMessage({
     dialogue,
     understanding,
@@ -287,6 +293,8 @@ test("an informed rejection plans a stop, not another attempt", () => {
     temperature: assessTemperature(messages, dialogue),
     gate: gate(),
     clarificationSpent: false,
+    booking,
+    noShow: assessNoShowRisk({ messages, qualification: FULL, dialogue, booking }),
   });
   assert.equal(p.move, "respect_rejection");
   assert.ok(auditMoves("Totally understand — can I ask what put you off?", p).violations.some((v) => /persistence/i.test(v)));
@@ -385,4 +393,90 @@ test("memory-closed topics also count as answered in the audit", () => {
     plan: planFor(messages, gate()),
   });
   assert.ok(audit.violations.some((v) => v.rule === "already_answered"), "memory closes it even years later");
+});
+
+// ---------------------------------------------------------------------------
+// Booking as a sequence, and whether the call would be honoured
+// ---------------------------------------------------------------------------
+
+test("booking walks through its states rather than jumping to booked", () => {
+  const ready = thread(["setter", "worth a quick call with Avo?"], ["prospect", "yeah go on"]);
+  assert.equal(assessBooking(ready, true).state, "call_ready");
+
+  const offered = [...ready, msg("setter", "Does Tuesday or Thursday work better?", 2)];
+  assert.equal(assessBooking(offered, true).state, "slots_offered");
+
+  const picked = [...offered, msg("prospect", "Thursday works", 3)];
+  assert.equal(assessBooking(picked, true).state, "slot_selected");
+
+  const asked = [...picked, msg("setter", "What's the best email to send the invite to?", 4)];
+  assert.equal(assessBooking(asked, true).state, "email_needed");
+
+  const emailed = [...asked, msg("prospect", "sam@clinic.com", 5)];
+  assert.equal(assessBooking(emailed, true).state, "invite_pending");
+
+  const confirmed = [...emailed, msg("setter", "Just sent the invite", 6), msg("prospect", "got it, see you Thursday", 7)];
+  assert.equal(assessBooking(confirmed, true).state, "booked");
+});
+
+test("a conversation mid-booking is never sent another pitch for the call", () => {
+  const messages = [
+    msg("setter", "Does Tuesday or Thursday work better?", 0),
+    msg("prospect", "Thursday works", 1),
+  ];
+  const p = planFor(messages, gate({ passed: true, blockers: [], missing_dimensions: [], total_score: 12 }));
+  assert.equal(p.move, "arrange_logistics");
+  assert.match(p.purpose, /email/i);
+  assert.ok(p.forbidden.some((f) => f.move === "build_value"));
+});
+
+test("a booking agreed on politeness alone is flagged as a likely no-show", () => {
+  const messages = thread(["setter", "worth a chat with Avo?"], ["prospect", "sure"]);
+  const dialogue = buildDialogueState(messages, null);
+  const booking = assessBooking(messages, true);
+  const risk = assessNoShowRisk({
+    messages,
+    qualification: { ...FULL, service_understanding: 0, commercial_goal: 0, media_gap: 0 },
+    dialogue,
+    booking,
+  });
+  assert.equal(risk.risk, "high");
+  assert.ok(risk.factors.some((f) => /understand what the call is for/i.test(f)));
+  assert.match(risk.mitigation, /do not book yet/i);
+});
+
+test("high no-show risk blocks the call even with an open gate", () => {
+  const messages = thread(["setter", "worth a chat?"], ["prospect", "sure"]);
+  const dialogue = buildDialogueState(messages, null);
+  const booking = assessBooking(messages, true);
+  const p = planMessage({
+    dialogue,
+    understanding: assessUnderstanding(messages.filter((m) => m.sender === "prospect"), false),
+    brushOff: classifyBrushOff(null, { understandsService: false, serviceExplained: false }),
+    temperature: assessTemperature(messages, dialogue),
+    gate: gate({ passed: true, blockers: [], missing_dimensions: [], total_score: 9 }),
+    clarificationSpent: false,
+    booking,
+    noShow: assessNoShowRisk({
+      messages,
+      qualification: { ...FULL, service_understanding: 0, commercial_goal: 0, media_gap: 0 },
+      dialogue,
+      booking,
+    }),
+  });
+  assert.equal(p.move, "build_value");
+  assert.ok(p.forbidden.some((f) => f.move === "offer_call"));
+});
+
+test("a well-qualified, engaged prospect is a low no-show risk", () => {
+  const messages = thread(
+    ["setter", "what are you building?"],
+    ["prospect", "I'm launching a second clinic in Q1 and want to be the name people find"],
+    ["setter", "what comes up when people look you up?"],
+    ["prospect", "honestly not much, no press at all — what does working with you look like?"],
+  );
+  const dialogue = buildDialogueState(messages, null);
+  const booking = assessBooking(messages, true);
+  const risk = assessNoShowRisk({ messages, qualification: FULL, dialogue, booking });
+  assert.equal(risk.risk, "low");
 });

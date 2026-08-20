@@ -244,6 +244,26 @@ export function CopilotPanel({
                 </div>
               )}
 
+              {result?.booking && result.booking.state !== "not_ready" && (
+                <div className="card">
+                  <h3>Booking</h3>
+                  <p style={{ margin: "0 0 8px" }}>
+                    <span className="pill">{result.booking.state.replace(/_/g, " ")}</span>
+                    {result.booking.next_action}
+                  </p>
+                  <p className="muted" style={{ margin: 0 }}>
+                    No-show risk: <strong>{result.booking.no_show_risk}</strong> — {result.booking.no_show_mitigation}
+                  </p>
+                  {result.booking.no_show_factors.length > 0 && (
+                    <ul className="list">
+                      {result.booking.no_show_factors.map((f) => (
+                        <li key={f}>{f}</li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              )}
+
               {result?.read && (
                 <div className="card">
                   <h3>Read on them</h3>

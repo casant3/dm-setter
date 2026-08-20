@@ -4,6 +4,7 @@ import { evaluateGate, totalScore } from "@/core/gate";
 import { planMessage } from "@/core/message-plan";
 import { reconcileQualification } from "@/core/qualification-evidence";
 import { applyExchangeToMemory } from "@/core/memory";
+import { memoryPatchFromExtraction, transcriptFor } from "@/core/memory-extract";
 import { offlineLlm } from "@/core/offline-llm";
 import { openaiConfigured } from "@/core/openai";
 import { openaiLlm } from "@/core/openai-llm";
@@ -96,6 +97,8 @@ export async function runSetterForContext(
     temperature: ctx.temperature,
     gate,
     clarificationSpent: ctx.clarificationSpent,
+    booking: ctx.booking,
+    noShow: ctx.noShow,
   });
   ctx.plan = plan;
 
@@ -156,6 +159,7 @@ export async function runSetterForContext(
           commercial_clarity_needed: enriched.understanding.commercial_clarity_needed?.reason ?? null,
         },
         plan,
+        booking: { state: ctx.booking.state, no_show_risk: ctx.noShow.risk },
         audit: finalAudit,
         evidence_adjustments: strategy.evidence_adjustments ?? [],
         temperature: ctx.temperature.temperature,
@@ -206,6 +210,13 @@ export async function runSetterForContext(
       violations: finalAudit.violations,
       words: finalAudit.words,
     },
+    booking: {
+      state: ctx.booking.state,
+      next_action: ctx.booking.next_action,
+      no_show_risk: ctx.noShow.risk,
+      no_show_factors: ctx.noShow.factors,
+      no_show_mitigation: ctx.noShow.mitigation,
+    },
     read: {
       temperature: ctx.temperature.temperature,
       motivation: ctx.motivation.primary,
@@ -248,6 +259,7 @@ export async function recordExchange(
   leadId: string,
   strategy: Strategy,
   sentMessage: string,
+  llm?: SetterLlm,
 ): Promise<void> {
   const [memory, messages] = await Promise.all([store.getMemory(leadId), store.listMessages(leadId)]);
   const patch = applyExchangeToMemory(memory, leadId, {
@@ -256,4 +268,21 @@ export async function recordExchange(
     prospectMessages: messages.filter((m) => m.sender === "prospect"),
   });
   await store.upsertMemory(leadId, patch);
+
+  // The richer, model-driven pass runs second and on the updated memory, so it
+  // can never overwrite what the deterministic pass just established — or any
+  // field a human has corrected.
+  const extractor = llm ?? defaultDeps().llm;
+  if (!extractor.extractMemory) return;
+
+  try {
+    const extraction = await timed("memory", () => extractor.extractMemory!(transcriptFor(messages)));
+    const current = await store.getMemory(leadId);
+    const { patch: extracted } = memoryPatchFromExtraction(current, leadId, extraction.result, messages);
+    await store.upsertMemory(leadId, extracted);
+  } catch (error) {
+    // Memory extraction is an enhancement, not a precondition: a failure here
+    // must never lose the exchange that has already been recorded.
+    console.error("memory extraction failed", error);
+  }
 }

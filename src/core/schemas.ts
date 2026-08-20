@@ -83,29 +83,44 @@ export const reviewSchema = {
   ],
 } as const;
 
-/** Schema for the optional model-driven memory extraction pass. */
+/**
+ * Schema for the model-driven memory extraction pass.
+ *
+ * Every item carries the quote it came from. Quotes are checked verbatim
+ * against the real messages: one that is found is recorded as a fact, one that
+ * is not is recorded as an inference at low confidence. Nothing the model says
+ * enters memory as fact on its own authority.
+ */
+const extractedItems = {
+  type: "array",
+  items: {
+    type: "object",
+    additionalProperties: false,
+    properties: {
+      value: { type: "string", description: "The fact, in a short phrase." },
+      quote: { type: "string", description: "The exact words from the conversation this came from." },
+    },
+    required: ["value", "quote"],
+  },
+} as const;
+
 export const memoryExtractionSchema = {
   type: "object",
   additionalProperties: false,
   properties: {
     relationship_summary: { type: ["string", "null"] },
     communication_style: { type: ["string", "null"] },
-    businesses: { type: "array", items: { type: "string" } },
-    goals: { type: "array", items: { type: "string" } },
-    personal_goals: { type: "array", items: { type: "string" } },
-    facts_known: { type: "array", items: { type: "string" } },
-    pain_points: { type: "array", items: { type: "string" } },
-    interests: { type: "array", items: { type: "string" } },
-    media_history: { type: "array", items: { type: "string" } },
-    opportunities_identified: { type: "array", items: { type: "string" } },
-    key_entities: { type: "array", items: { type: "string" } },
-    objections: { type: "array", items: { type: "string" } },
-    followup_commitments: { type: "array", items: { type: "string" } },
-    inferences: {
-      type: "array",
-      description: "Items that are reasoned rather than stated outright.",
-      items: { type: "string" },
-    },
+    businesses: extractedItems,
+    goals: extractedItems,
+    personal_goals: extractedItems,
+    facts_known: extractedItems,
+    pain_points: extractedItems,
+    interests: extractedItems,
+    media_history: extractedItems,
+    opportunities_identified: extractedItems,
+    key_entities: extractedItems,
+    objections: extractedItems,
+    followup_commitments: extractedItems,
   },
   required: [
     "relationship_summary",
@@ -121,6 +136,5 @@ export const memoryExtractionSchema = {
     "key_entities",
     "objections",
     "followup_commitments",
-    "inferences",
   ],
 } as const;
