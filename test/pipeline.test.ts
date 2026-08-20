@@ -424,3 +424,39 @@ test("verified research reaches the model, unverified does not, and neither qual
   assert.equal(result.gate.passed, false);
   assert.equal(result.plan.move, "cold_opener");
 });
+
+test("the writer and the reviewer both receive the plan, the ledger and the audit", async () => {
+  const deps = await freshDeps();
+  const cody = await leadByHandle(deps, "codyalt");
+
+  let writerContext = "";
+  let reviewerContext = "";
+  let reviewerAudit = "";
+  const spy = {
+    ...offlineLlm,
+    async reply(ctx: Parameters<typeof offlineLlm.reply>[0], context: string, strategy: Parameters<typeof offlineLlm.reply>[2]) {
+      writerContext = context;
+      return offlineLlm.reply(ctx, context, strategy);
+    },
+    async review(
+      ctx: Parameters<typeof offlineLlm.review>[0],
+      context: string,
+      strategy: Parameters<typeof offlineLlm.review>[2],
+      draft: string,
+      audit: string,
+    ) {
+      reviewerContext = context;
+      reviewerAudit = audit;
+      return offlineLlm.review(ctx, context, strategy, draft, audit);
+    },
+  };
+
+  await runSetterForLead(cody.id, "how long is the pod?", { ...deps, llm: spy });
+
+  assert.match(writerContext, /"message_plan"/, "the writer is told which single move to make");
+  assert.match(writerContext, /"move": "correct_premise"/);
+  assert.match(writerContext, /already_answered_do_not_ask_again/, "and what has already been answered");
+  assert.match(writerContext, /qualification_evidence/);
+  assert.equal(reviewerContext, writerContext, "both passes see the same context");
+  assert.match(reviewerAudit, /DETERMINISTIC AUDIT/, "the reviewer is given the audit findings as facts");
+});
