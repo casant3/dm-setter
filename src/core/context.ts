@@ -252,10 +252,16 @@ export function compactContext(ctx: LeadContext): string {
             commercial_goals: itemValues(m.goals),
             personal_goals: itemValues(m.personal_goals),
             facts_known: itemValues(m.facts_known),
-            researched_about_them: itemValues(m.research_facts),
+            researched_verified: (m.research_facts ?? [])
+              .filter((f) => f.verified)
+              .map((f) => ({ fact: f.value, source: f.source_ref ?? f.quote ?? null, confidence: f.confidence })),
+            // Unverified research is deliberately NOT sent. A model cannot leak
+            // what it has never seen, and the rule "do not mention this" is a
+            // weaker guarantee than not providing it.
+            unverified_research_withheld: (m.research_facts ?? []).filter((f) => !f.verified).length,
             research_note:
               (m.research_facts?.length ?? 0) > 0
-                ? "We found these ourselves. They have never told us any of it. You may refer to something publicly visible ('saw you opened the second clinic'), but never imply they told you, and never use anything that would be unsettling to hear back from a stranger."
+                ? "We found these ourselves; they have never told us any of it. Only verified facts are given to you, and only as something you may mention noticing publicly — never as something they told you, never more than one, and never in a way that sounds like you researched them. Unverified research is withheld from you on purpose. No research fact ever counts as qualification evidence."
                 : null,
             pain_points: itemValues(m.pain_points),
             interests: itemValues(m.interests),

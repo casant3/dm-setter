@@ -8,6 +8,7 @@
     "start": "next start",
     "cli": "tsx src/core/cli.ts",
     "seed": "tsx scripts/seed_playbook.ts",
+    "auth:setup": "tsx scripts/auth_setup.ts",
     "typecheck": "tsc --noEmit",
     "test": "tsx --test test/*.test.ts",
     "ingest:validate": "tsx scripts/ingest/validate.ts",

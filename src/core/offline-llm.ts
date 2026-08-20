@@ -142,6 +142,12 @@ function buildReply(ctx: LeadContext, strategy: Strategy): string {
 
   // The plan, where one has been made, decides the move.
   switch (ctx.plan?.move) {
+    case "cold_opener": {
+      const fact = (ctx.memory?.research_facts ?? []).find((f) => f.verified)?.value;
+      return fact
+        ? `Hey ${who} — noticed ${lower(fact)}. What's the plan behind it?`
+        : `Hey ${who} — what are you focused on building at the moment?`;
+    }
     case "respect_rejection":
       return `Understood — I'll leave it there. If it ever becomes relevant, you know where I am.`;
     case "park_and_agree_time":
@@ -167,8 +173,8 @@ function buildReply(ctx: LeadContext, strategy: Strategy): string {
   }
 
   if (strategy.service_confusion) {
-    const anchor = goal ? ` Given ${lower(goal)}, that's the part that actually matters.` : "";
-    return `Ah — I should be clearer, this isn't me inviting you on as a guest. We work with clients on building out media and authority: podcast placement, written media, and the search presence that sits behind it.${anchor} Want me to walk you through what that would look like in your case?`;
+    const anchor = goal ? ` Given ${lower(goal)}, that's the part that matters.` : "";
+    return `Ah, I should be clearer — this isn't me inviting you on as a guest. We build out media and search presence for clients, so there's third-party proof behind their name.${anchor}`;
   }
   if (q.commercial_goal === 0) {
     return `Quick one ${who} — what are you actually building toward over the next few months?`;

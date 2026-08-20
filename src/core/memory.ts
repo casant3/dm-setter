@@ -58,7 +58,13 @@ export function emptyMemory(leadId: string): LeadMemory {
 export function makeItem(
   value: string,
   provenance: Provenance,
-  options: { confidence?: number; source_message_id?: string | null; quote?: string | null; verified?: boolean } = {},
+  options: {
+    confidence?: number;
+    source_message_id?: string | null;
+    quote?: string | null;
+    source_ref?: string | null;
+    verified?: boolean;
+  } = {},
 ): MemoryItem {
   return {
     value: value.trim(),
@@ -66,6 +72,7 @@ export function makeItem(
     confidence: options.verified ? 1 : (options.confidence ?? (provenance === "fact" ? 0.9 : provenance === "research" ? 0.7 : 0.6)),
     source_message_id: options.source_message_id ?? null,
     quote: options.quote ?? null,
+    source_ref: options.source_ref ?? null,
     recorded_at: new Date().toISOString(),
     verified: options.verified ?? false,
   };

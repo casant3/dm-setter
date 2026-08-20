@@ -99,6 +99,7 @@ export async function runSetterForContext(
     clarificationSpent: ctx.clarificationSpent,
     booking: ctx.booking,
     noShow: ctx.noShow,
+    verifiedResearch: (ctx.memory?.research_facts ?? []).filter((f) => f.verified),
   });
   ctx.plan = plan;
 

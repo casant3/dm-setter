@@ -384,3 +384,43 @@ test("the suggestion stored for a lead records the plan and the audit", async ()
   assert.equal(used.plan?.move, "correct_premise");
   assert.equal(typeof used.audit?.ok, "boolean");
 });
+
+test("verified research reaches the model, unverified does not, and neither qualifies the lead", async () => {
+  const deps = await freshDeps();
+  const lead = await deps.store.createLead({ instagram_handle: "research_subject" });
+  const now = new Date().toISOString();
+  await deps.store.upsertMemory(lead.id, {
+    lead_id: lead.id,
+    research_facts: [
+      {
+        value: "opened a second clinic in Leeds",
+        provenance: "research",
+        confidence: 1,
+        recorded_at: now,
+        quote: "practice website",
+        source_ref: "https://example.invalid/about",
+        verified: true,
+      },
+      {
+        value: "rumoured to be raising",
+        provenance: "research",
+        confidence: 0.4,
+        recorded_at: now,
+        quote: null,
+        verified: false,
+      },
+    ],
+  });
+
+  const { loadLeadContext, compactContext } = await import("@/core/context");
+  const serialized = compactContext(await loadLeadContext(deps.store, lead.id, ""));
+  assert.match(serialized, /second clinic in Leeds/);
+  assert.doesNotMatch(serialized, /rumoured to be raising/, "unverified research is withheld from the model entirely");
+  assert.match(serialized, /unverified_research_withheld": 1/);
+  assert.match(serialized, /Only verified facts are given to you/);
+
+  const result = await runSetterForLead(lead.id, "", deps);
+  assert.equal(result.strategy.qualification.commercial_goal, 0, "research is not qualification evidence");
+  assert.equal(result.gate.passed, false);
+  assert.equal(result.plan.move, "cold_opener");
+});

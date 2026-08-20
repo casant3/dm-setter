@@ -129,6 +129,8 @@ export type MemoryItem = {
   source_message_id?: string | null;
   /** Verbatim supporting quote, when available. */
   quote?: string | null;
+  /** Where a researched fact came from: a URL, a publication, a profile. */
+  source_ref?: string | null;
   recorded_at: string;
   /** True once a human has confirmed or written this item. */
   verified?: boolean;

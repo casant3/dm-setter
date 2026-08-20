@@ -17,6 +17,7 @@ import type { GateResult } from "@/lib/types";
  */
 
 export const MOVES = [
+  "cold_opener",
   "respect_rejection",
   "correct_premise",
   "clarify_commercial",
@@ -67,6 +68,8 @@ export function planMessage(input: {
   clarificationSpent: boolean;
   booking: BookingAssessment;
   noShow: NoShowAssessment;
+  /** Research facts a person has verified, usable in a cold opener. */
+  verifiedResearch?: { value: string }[];
 }): MessagePlan {
   const { dialogue, understanding, brushOff, temperature, gate, clarificationSpent, booking, noShow } = input;
 
@@ -74,6 +77,27 @@ export function planMessage(input: {
     forbidden: [] as { move: Move; why: string }[],
     ask_topic: null as Topic | null,
   };
+
+  // Nothing has been said back yet: this is an opener, not a conversation.
+  if (dialogue.prospect_message_count === 0) {
+    const fact = input.verifiedResearch?.[0]?.value ?? null;
+    return {
+      ...base,
+      move: "cold_opener",
+      purpose: fact
+        ? `Open on one specific thing we can actually see: ${fact}.`
+        : "Open with something specific and easy to answer. We have no verified research, so do not imply we know anything about them.",
+      desired_response: "A reply of any length. The only job of an opener is to start a conversation.",
+      next_if_positive: "Ask what they are building toward before anything else.",
+      next_if_negative: "Accept it in one line and stop.",
+      next_if_no_reply: "One short follow-up from a different angle, then leave it.",
+      forbidden: [
+        CALL_FORBIDDEN,
+        { move: "build_value", why: "Nothing is known about their goal yet — a pitch into silence is a cold pitch." },
+        { move: "clarify_commercial", why: "Explaining the service before they have said a word is a brochure, not a DM." },
+      ],
+    };
+  }
 
   if (brushOff.should_disengage) {
     return {
@@ -298,6 +322,9 @@ export function auditMoves(draft: string, plan: MessagePlan): MoveAudit {
   }
   if (plan.move === "ask_discovery" && questions === 0) {
     violations.push("The plan is to ask a question, but the draft asks nothing — it is a statement.");
+  }
+  if (plan.move === "cold_opener" && /\b(i (researched|looked (you|into))|been following you|read all about)\b/i.test(draft)) {
+    violations.push("Sounds like we researched them. Mention what we noticed, not the researching.");
   }
   if (plan.move === "respect_rejection" && questions > 0) {
     violations.push("They have declined. A question here is persistence, not curiosity.");

@@ -14,6 +14,11 @@ A permanent-memory Instagram DM appointment-setting agent powered by OpenAI, wit
 - Retrieves both similar winners and similar failures.
 - Gives each lead permanent memory plus a short recent-message working context.
 - Stores every AI suggestion and later user edits/outcomes for a feedback loop.
+- Tracks what has already been asked and answered *semantically*, so a question is never repeated in different words.
+- Makes exactly one move per message, with a defined next step for a yes, a no and silence.
+- Distinguishes a wrong premise about the service from a straightforward question about price.
+- Reads brush-offs, timing objections and real rejections differently, and stops when it should.
+- Carries the operator's own rules, which outrank everything the agent has learned.
 
 ## Architecture
 
@@ -25,7 +30,7 @@ AI copilot    ─┘                     │              │
                                      └─ Supabase memory (leads, messages, lead_memories, events, credibility)
 ```
 
-The pipeline is unchanged from V1: the same prompt, the same JSON schemas, the same three passes. What is new is that the persistence layer and the model layer are now interfaces, so the same core drives the CLI, the web app, and the tests.
+The three model passes are unchanged from V1 — strategist, writer, reviewer — but they are now surrounded by deterministic reading and enforcement: the conversation is analysed in code before the model sees it, and every draft is audited in code before and after the reviewer. What is new is that the persistence layer and the model layer are now interfaces, so the same core drives the CLI, the web app, and the tests.
 
 - `src/core/` — the agent. `prompts.ts` and `schemas.ts` are byte-identical to V1.
 - `src/lib/store/` — `Store` interface, Supabase implementation, local dev implementation.
@@ -69,7 +74,8 @@ See [`docs/AGENT_BRAIN.md`](docs/AGENT_BRAIN.md) for the full design.
 
 1. Create/use a Supabase project.
 2. Run `supabase/schema.sql`, then `supabase/migrations/002_web_app.sql`, then
-   `supabase/migrations/003_agent_brain.sql`, in a development database.
+   `supabase/migrations/003_agent_brain.sql`, `supabase/migrations/004_coaching.sql`
+   and `supabase/migrations/005_research.sql`, in a development database.
 3. Copy `.env.example` to `.env` and add server-side credentials.
 4. `npm install`
 5. `npm run seed` — seeds the playbook rules.
@@ -116,6 +122,10 @@ Both are development conveniences. Supabase is the source of truth and GPT-5.6 i
 | `POST /api/leads/:id/import` | parse a pasted thread (preview by default, `commit: true` to write) |
 | `POST /api/suggestions/:id/feedback` | record `used` / `edited` / `rejected` |
 | `GET/PATCH /api/leads/:id/memory` | inspect or correct long-term memory |
+| `POST /api/leads/:id/research` | record researched facts about a lead, with source and verified status |
+| `GET/POST /api/coaching` | the coaching layer: rules and examples, including proposals awaiting review |
+| `PATCH /api/coaching/:id` | approve or reject a proposed rule or example |
+| `POST /api/coaching/import` | queue coaching candidates from a ChatGPT export for review |
 | `GET /api/corpus`, `GET/PATCH /api/corpus/:id` | transcript verification workflow |
 | `GET /api/analytics` | feedback-learning statistics |
 | `GET/POST/DELETE /api/auth` | session status, sign in, sign out |

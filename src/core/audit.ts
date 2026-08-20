@@ -39,10 +39,18 @@ export function auditDraft(draft: string, input: AuditInput): DraftAudit {
 
   const repeated = draftRepeatsAnsweredTopic(draft, input.dialogue);
   if (repeated) {
+    // Interest expressed under a false premise is not interest in this. When the
+    // move is to correct that premise, re-checking whether they want to hear it
+    // is the point of the message, not a repetition.
+    const consentGivenUnderAFalsePremise =
+      input.plan.move === "correct_premise" && (repeated === "openness_interest" || repeated === "service_model");
+
     violations.push({
       rule: "already_answered",
-      detail: `Asks again about "${TOPIC_LABELS[repeated]}". They already answered: "${input.dialogue.topics[repeated].answer_quote}"`,
-      severity: "hard",
+      detail: consentGivenUnderAFalsePremise
+        ? `Re-opens "${TOPIC_LABELS[repeated]}", which is allowed here: they agreed to something they had misunderstood. Keep it to one line.`
+        : `Asks again about "${TOPIC_LABELS[repeated]}". They already answered: "${input.dialogue.topics[repeated].answer_quote}"`,
+      severity: consentGivenUnderAFalsePremise ? "soft" : "hard",
     });
   }
 

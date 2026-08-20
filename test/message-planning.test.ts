@@ -480,3 +480,43 @@ test("a well-qualified, engaged prospect is a low no-show risk", () => {
   const risk = assessNoShowRisk({ messages, qualification: FULL, dialogue, booking });
   assert.equal(risk.risk, "low");
 });
+
+// ---------------------------------------------------------------------------
+// Cold openers and research
+// ---------------------------------------------------------------------------
+
+test("with no reply yet the plan is an opener, not discovery or a pitch", () => {
+  const p = planFor(thread(["setter", "hey"]), gate());
+  assert.equal(p.move, "cold_opener");
+  assert.ok(p.forbidden.some((f) => f.move === "offer_call"));
+  assert.ok(p.forbidden.some((f) => f.move === "build_value"));
+});
+
+test("an opener uses one verified research fact and never claims to have researched them", () => {
+  const messages = thread(["setter", "hey"]);
+  const dialogue = buildDialogueState(messages, null);
+  const booking = assessBooking(messages, false);
+  const p = planMessage({
+    dialogue,
+    understanding: assessUnderstanding([], false),
+    brushOff: classifyBrushOff(null, { understandsService: false, serviceExplained: false }),
+    temperature: assessTemperature(messages, dialogue),
+    gate: gate(),
+    clarificationSpent: false,
+    booking,
+    noShow: assessNoShowRisk({ messages, qualification: FULL, dialogue, booking }),
+    verifiedResearch: [{ value: "they opened a second clinic in Leeds" }],
+  });
+  assert.match(p.purpose, /second clinic in Leeds/);
+  assert.ok(
+    auditMoves("I researched you extensively and noticed the second clinic.", p).violations.some((v) =>
+      /researched them/i.test(v),
+    ),
+  );
+  assert.equal(auditMoves("Noticed you opened the second clinic in Leeds — what's the plan behind it?", p).violations.length, 0);
+});
+
+test("with no verified research the opener does not pretend to know anything", () => {
+  const p = planFor(thread(["setter", "hey"]), gate());
+  assert.match(p.purpose, /do not imply we know anything about them/i);
+});
