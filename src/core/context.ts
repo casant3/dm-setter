@@ -1,5 +1,6 @@
 import { assessBooking, assessNoShowRisk, type BookingAssessment, type NoShowAssessment } from "@/core/booking";
 import { classifyBrushOff, clarificationAlreadyUsed, type BrushOffAssessment } from "@/core/brush-off";
+import { buildCoachingLayer, type CoachingLayer } from "@/core/coaching";
 import { rankCredibility } from "@/core/credibility";
 import { buildDialogueState, summariseDialogueState, type DialogueState } from "@/core/dialogue-state";
 import type { MessagePlan } from "@/core/message-plan";
@@ -59,6 +60,8 @@ export type LeadContext = {
   strategy?: Strategy;
   /** Populated once the gate has been evaluated. */
   plan?: MessagePlan;
+  /** How the operator wants this written. Loaded in the enrichment pass. */
+  coaching?: CoachingLayer;
 };
 
 /**
@@ -147,9 +150,12 @@ export async function enrichContext(
 ): Promise<LeadContext> {
   const queryText = buildQueryText(ctx.lead, strategy, ctx.newMessage);
 
-  const [candidates, allCredibility] = await Promise.all([
+  const [candidates, allCredibility, preferences, coachingExamples, liveMessages] = await Promise.all([
     store.matchChunks(queryText, RETRIEVAL_CANDIDATES),
     store.listCredibility(60),
+    store.listSetterPreferences("active"),
+    store.listCoachingExamples("approved"),
+    store.listApprovedLiveMessages(8),
   ]);
 
   const examples = rerankAndBucket(candidates, {
@@ -163,6 +169,12 @@ export async function enrichContext(
     strategy,
     examples,
     credibility: rankCredibility(allCredibility, ctx.lead, strategy),
+    coaching: buildCoachingLayer({
+      preferences,
+      examples: coachingExamples,
+      liveMessages,
+      stage: strategy.stage,
+    }),
   };
 }
 
@@ -353,6 +365,15 @@ export function compactContext(ctx: LeadContext): string {
       similar_partial_wins: ctx.examples.partial_wins.map(summariseChunk),
       similar_failures: ctx.examples.failures.map(summariseChunk),
       failures_note: "These are examples of what NOT to repeat. Do not imitate their approach.",
+      how_cassey_wants_this_written: ctx.coaching
+        ? {
+            rules_from_cassey: ctx.coaching.rules,
+            approved_examples: ctx.coaching.examples,
+            messages_cassey_actually_sent: ctx.coaching.live_messages,
+            precedence: ctx.coaching.precedence,
+            note: ctx.coaching.note,
+          }
+        : null,
       voice_examples: ctx.examples.voice_examples.map((c) => ({ setter: c.setter_name, content: c.content })),
       voice_note: "Match the phrasing, length and tone of the voice examples. Learn strategy from the winners, not their wording.",
       prospect_new_message: ctx.newMessage || null,

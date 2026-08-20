@@ -1,5 +1,6 @@
 import type {
   AiSuggestion,
+  CoachingExample,
   ConversationChunk,
   ConversationEvent,
   CredibilityAsset,
@@ -9,6 +10,7 @@ import type {
   Message,
   NewLeadInput,
   NewMessageInput,
+  SetterPreference,
   SourceConversation,
   Strategy,
   SuggestionFeedback,
@@ -85,4 +87,20 @@ export interface Store {
   /** Human-edit path: a person may always correct their own verified transcript. */
   updateSourceConversation(id: string, patch: Partial<SourceConversation>): Promise<SourceConversation>;
   replaceChunksForConversation(conversationId: string, chunks: Omit<ConversationChunk, "id" | "similarity">[]): Promise<number>;
+
+  /**
+   * Coaching layer. Nothing here is applied until a human approves it, so the
+   * status filter is the whole safety mechanism: `listSetterPreferences()`
+   * without a status returns everything, including proposals.
+   */
+  listSetterPreferences(status?: string): Promise<SetterPreference[]>;
+  createSetterPreference(input: Omit<SetterPreference, "id" | "created_at">): Promise<SetterPreference>;
+  updateSetterPreference(id: string, patch: Partial<SetterPreference>): Promise<SetterPreference>;
+
+  listCoachingExamples(status?: string): Promise<CoachingExample[]>;
+  createCoachingExample(input: Omit<CoachingExample, "id" | "created_at">): Promise<CoachingExample>;
+  updateCoachingExample(id: string, patch: Partial<CoachingExample>): Promise<CoachingExample>;
+
+  /** Messages the operator actually sent, newest first — the live voice. */
+  listApprovedLiveMessages(limit: number): Promise<{ sent: string; stage: string | null; at: string; edited: boolean }[]>;
 }

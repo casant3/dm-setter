@@ -2,12 +2,14 @@ import { randomUUID } from "node:crypto";
 import { emptyMemory, makeItem } from "@/core/memory";
 import type {
   AiSuggestion,
+  CoachingExample,
   ConversationChunk,
   ConversationEvent,
   CredibilityAsset,
   Lead,
   LeadMemory,
   Message,
+  SetterPreference,
   SourceConversation,
 } from "@/lib/types";
 
@@ -65,6 +67,8 @@ export function seedData(): {
   chunks: ConversationChunk[];
   suggestions: AiSuggestion[];
   source_conversations: SourceConversation[];
+  setter_preferences: SetterPreference[];
+  coaching_examples: CoachingExample[];
 } {
   const cody = "11111111-1111-4111-8111-111111111111";
   const mara = "22222222-2222-4222-8222-222222222222";
@@ -347,5 +351,7 @@ export function seedData(): {
     chunks,
     suggestions: [],
     source_conversations: [],
+    setter_preferences: [],
+    coaching_examples: [],
   };
 }

@@ -5,6 +5,7 @@ import { emptyMemory } from "@/core/memory";
 import { record } from "@/core/observability";
 import type {
   AiSuggestion,
+  CoachingExample,
   ConversationChunk,
   ConversationEvent,
   CredibilityAsset,
@@ -14,6 +15,7 @@ import type {
   Message,
   NewLeadInput,
   NewMessageInput,
+  SetterPreference,
   SourceConversation,
 } from "@/lib/types";
 import type { FeedbackInput, FeedbackStats, Store, SuggestionDraft } from "@/lib/store/store";
@@ -321,6 +323,67 @@ export class SupabaseStore implements Store {
       await getDb().from("source_conversations").update(patch).eq("id", id).select("*").single(),
       "updateSourceConversation",
     );
+  }
+
+  // --- coaching ------------------------------------------------------------
+
+  async listSetterPreferences(status?: string): Promise<SetterPreference[]> {
+    const query = getDb().from("setter_preferences").select("*").order("priority", { ascending: false });
+    return unwrap(await (status ? query.eq("status", status) : query), "listSetterPreferences") ?? [];
+  }
+
+  async createSetterPreference(input: Omit<SetterPreference, "id" | "created_at">): Promise<SetterPreference> {
+    return unwrapOne(
+      await getDb().from("setter_preferences").insert(input).select("*").single(),
+      "createSetterPreference",
+    );
+  }
+
+  async updateSetterPreference(id: string, patch: Partial<SetterPreference>): Promise<SetterPreference> {
+    return unwrapOne(
+      await getDb().from("setter_preferences").update(patch).eq("id", id).select("*").single(),
+      "updateSetterPreference",
+    );
+  }
+
+  async listCoachingExamples(status?: string): Promise<CoachingExample[]> {
+    const query = getDb().from("coaching_examples").select("*").order("created_at", { ascending: false });
+    return unwrap(await (status ? query.eq("status", status) : query), "listCoachingExamples") ?? [];
+  }
+
+  async createCoachingExample(input: Omit<CoachingExample, "id" | "created_at">): Promise<CoachingExample> {
+    return unwrapOne(
+      await getDb().from("coaching_examples").insert(input).select("*").single(),
+      "createCoachingExample",
+    );
+  }
+
+  async updateCoachingExample(id: string, patch: Partial<CoachingExample>): Promise<CoachingExample> {
+    return unwrapOne(
+      await getDb().from("coaching_examples").update(patch).eq("id", id).select("*").single(),
+      "updateCoachingExample",
+    );
+  }
+
+  async listApprovedLiveMessages(limit: number) {
+    const rows =
+      unwrap(
+        await getDb()
+          .from("ai_suggestions")
+          .select("final_message_sent, feedback, feedback_at, created_at, strategy")
+          .in("feedback", ["used", "edited"])
+          .not("final_message_sent", "is", null)
+          .order("feedback_at", { ascending: false })
+          .limit(limit),
+        "listApprovedLiveMessages",
+      ) ?? [];
+
+    return rows.map((r: { final_message_sent: string; feedback: string; feedback_at: string | null; created_at: string; strategy: { stage?: string } | null }) => ({
+      sent: r.final_message_sent,
+      stage: r.strategy?.stage ?? null,
+      at: r.feedback_at ?? r.created_at,
+      edited: r.feedback === "edited",
+    }));
   }
 
   async replaceChunksForConversation(

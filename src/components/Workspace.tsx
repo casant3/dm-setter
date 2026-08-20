@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { api, type AppStatus, type LeadDetail } from "@/lib/client";
 import type { AgentResult, Lead, LeadListItem, NewLeadInput, Sender, SuggestionFeedback } from "@/lib/types";
 import { ConversationView } from "@/components/ConversationView";
+import { CoachingPanel } from "@/components/CoachingPanel";
 import { CorpusPanel } from "@/components/CorpusPanel";
 import { MemoryPanel } from "@/components/MemoryPanel";
 import { CopilotPanel } from "@/components/CopilotPanel";
@@ -26,6 +27,7 @@ export function Workspace() {
   const [showNewLead, setShowNewLead] = useState(false);
   const [showImport, setShowImport] = useState(false);
   const [showCorpus, setShowCorpus] = useState(false);
+  const [showCoaching, setShowCoaching] = useState(false);
   const [rightTab, setRightTab] = useState<"copilot" | "memory">("copilot");
 
   const refreshLeads = useCallback(async () => {
@@ -136,6 +138,7 @@ export function Workspace() {
         )}
         <span className="spacer" />
         {topError && <span className="error">{topError}</span>}
+        <button className="btn small ghost" onClick={() => setShowCoaching(true)}>Coaching</button>
         <button className="btn small ghost" onClick={() => setShowCorpus(true)}>Corpus</button>
         <button
           className="btn small ghost"
@@ -215,6 +218,7 @@ export function Workspace() {
       </div>
 
       {showCorpus && <CorpusPanel onClose={() => setShowCorpus(false)} />}
+      {showCoaching && <CoachingPanel onClose={() => setShowCoaching(false)} />}
       {showNewLead && <NewLeadDialog onClose={() => setShowNewLead(false)} onCreate={createLead} />}
       {showImport && detail && (
         <ImportDialog

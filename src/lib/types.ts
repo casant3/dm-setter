@@ -411,3 +411,45 @@ export type SourceConversation = {
   verified_at: string | null;
   created_at: string | null;
 };
+
+// ---------------------------------------------------------------------------
+// Coaching: how the operator wants this written
+// ---------------------------------------------------------------------------
+
+export const COACHING_STATUSES = ["pending_review", "active", "approved", "rejected"] as const;
+export type CoachingStatus = (typeof COACHING_STATUSES)[number];
+
+export const COACHING_SOURCES = ["human", "live_edit", "chatgpt_import"] as const;
+export type CoachingSource = (typeof COACHING_SOURCES)[number];
+
+/** An explicit instruction from the operator. Overrides every learned source. */
+export type SetterPreference = {
+  id: string;
+  setter_name: string;
+  rule: string;
+  /** A stage name to scope the rule to, or null for always. */
+  applies_to: string | null;
+  source: CoachingSource;
+  /** Only "active" rules reach the prompt. */
+  status: CoachingStatus;
+  priority: number;
+  /** The edit or import this was proposed from, when it was not typed by hand. */
+  evidence: Record<string, unknown> | null;
+  approved_at: string | null;
+  created_at: string;
+};
+
+/** A situation-and-reply pair the operator has stood behind. */
+export type CoachingExample = {
+  id: string;
+  setter_name: string;
+  situation: string;
+  prospect_message: string | null;
+  approved_reply: string;
+  why: string | null;
+  source: CoachingSource;
+  status: CoachingStatus;
+  tags: string[];
+  approved_at: string | null;
+  created_at: string;
+};

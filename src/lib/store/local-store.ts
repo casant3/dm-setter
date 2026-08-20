@@ -4,6 +4,7 @@ import path from "node:path";
 import { emptyMemory } from "@/core/memory";
 import type {
   AiSuggestion,
+  CoachingExample,
   ConversationChunk,
   ConversationEvent,
   CredibilityAsset,
@@ -13,6 +14,7 @@ import type {
   Message,
   NewLeadInput,
   NewMessageInput,
+  SetterPreference,
   SourceConversation,
 } from "@/lib/types";
 import type { FeedbackInput, FeedbackStats, Store, SuggestionDraft } from "@/lib/store/store";
@@ -27,6 +29,8 @@ type Db = {
   chunks: ConversationChunk[];
   suggestions: AiSuggestion[];
   source_conversations: SourceConversation[];
+  setter_preferences: SetterPreference[];
+  coaching_examples: CoachingExample[];
 };
 
 const STOPWORDS = new Set([
@@ -70,6 +74,8 @@ export class LocalStore implements Store {
         chunks: raw.chunks ?? [],
         suggestions: raw.suggestions ?? [],
         source_conversations: raw.source_conversations ?? [],
+        setter_preferences: raw.setter_preferences ?? [],
+        coaching_examples: raw.coaching_examples ?? [],
       };
     } catch {
       const fresh = seedData();
@@ -423,6 +429,68 @@ export class LocalStore implements Store {
       Object.assign(row, patch, { id });
       return row;
     });
+  }
+
+  // --- coaching ------------------------------------------------------------
+
+  async listSetterPreferences(status?: string): Promise<SetterPreference[]> {
+    const db = await this.read();
+    const rows = status ? db.setter_preferences.filter((p) => p.status === status) : db.setter_preferences;
+    return [...rows].sort((a, b) => (b.priority ?? 0) - (a.priority ?? 0));
+  }
+
+  async createSetterPreference(input: Omit<SetterPreference, "id" | "created_at">): Promise<SetterPreference> {
+    return this.transact((db) => {
+      const created: SetterPreference = { ...input, id: randomUUID(), created_at: new Date().toISOString() };
+      db.setter_preferences.push(created);
+      return created;
+    });
+  }
+
+  async updateSetterPreference(id: string, patch: Partial<SetterPreference>): Promise<SetterPreference> {
+    return this.transact((db) => {
+      const row = db.setter_preferences.find((p) => p.id === id);
+      if (!row) throw new Error(`Setter preference not found: ${id}`);
+      Object.assign(row, patch, { id });
+      return row;
+    });
+  }
+
+  async listCoachingExamples(status?: string): Promise<CoachingExample[]> {
+    const db = await this.read();
+    const rows = status ? db.coaching_examples.filter((e) => e.status === status) : db.coaching_examples;
+    return [...rows].sort((a, b) => b.created_at.localeCompare(a.created_at));
+  }
+
+  async createCoachingExample(input: Omit<CoachingExample, "id" | "created_at">): Promise<CoachingExample> {
+    return this.transact((db) => {
+      const created: CoachingExample = { ...input, id: randomUUID(), created_at: new Date().toISOString() };
+      db.coaching_examples.push(created);
+      return created;
+    });
+  }
+
+  async updateCoachingExample(id: string, patch: Partial<CoachingExample>): Promise<CoachingExample> {
+    return this.transact((db) => {
+      const row = db.coaching_examples.find((e) => e.id === id);
+      if (!row) throw new Error(`Coaching example not found: ${id}`);
+      Object.assign(row, patch, { id });
+      return row;
+    });
+  }
+
+  async listApprovedLiveMessages(limit: number) {
+    const db = await this.read();
+    return db.suggestions
+      .filter((s) => (s.feedback === "used" || s.feedback === "edited") && s.final_message_sent)
+      .sort((a, b) => (b.feedback_at ?? b.created_at).localeCompare(a.feedback_at ?? a.created_at))
+      .slice(0, limit)
+      .map((s) => ({
+        sent: s.final_message_sent!,
+        stage: s.strategy?.stage ?? null,
+        at: s.feedback_at ?? s.created_at,
+        edited: s.feedback === "edited",
+      }));
   }
 
   async replaceChunksForConversation(

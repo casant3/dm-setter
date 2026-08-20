@@ -1,4 +1,5 @@
 import { recordExchange } from "@/core/agent";
+import { observeEdit } from "@/core/coaching";
 import { fail, handleError, ok, readJson } from "@/lib/api";
 import { requireAuth } from "@/lib/auth";
 import { getStore } from "@/lib/store";
@@ -56,7 +57,27 @@ export async function POST(request: Request, { params }: Params) {
       await recordExchange(store, suggestion.lead_id, suggestion.strategy, finalMessage);
     }
 
-    return ok({ suggestion });
+    // An edit is the operator saying "not like that, like this". What the edit
+    // appears to mean is proposed as a rule — and stays inert until approved.
+    let proposals = 0;
+    if (body.feedback === "edited" && finalMessage) {
+      const observations = observeEdit(suggestion.suggested_message, finalMessage);
+      for (const observation of observations) {
+        await store.createSetterPreference({
+          setter_name: process.env.SETTER_VOICE || "Cassey",
+          rule: observation.proposed_rule,
+          applies_to: suggestion.strategy?.stage ?? null,
+          source: "live_edit",
+          status: "pending_review",
+          priority: 0,
+          evidence: { ...observation.evidence, suggestion_id: suggestion.id },
+          approved_at: null,
+        });
+        proposals += 1;
+      }
+    }
+
+    return ok({ suggestion, coaching_proposals: proposals });
   } catch (error) {
     return handleError(error);
   }
