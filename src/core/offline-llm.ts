@@ -171,7 +171,7 @@ function buildReply(ctx: LeadContext, strategy: Strategy): string {
     return `Ah — I should be clearer, this isn't me inviting you on as a guest. We work with clients on building out media and authority: podcast placement, written media, and the search presence that sits behind it.${anchor} Want me to walk you through what that would look like in your case?`;
   }
   if (q.commercial_goal === 0) {
-    return `Quick one ${who} — what are you actually building toward over the next few months? Launching something, raising, or trying to get known for a specific thing?`;
+    return `Quick one ${who} — what are you actually building toward over the next few months?`;
   }
   if (q.media_gap === 0) {
     return `Makes sense. When someone hears about you and looks you up, what actually comes up right now?`;

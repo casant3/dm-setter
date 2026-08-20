@@ -112,12 +112,13 @@ export type Message = {
 // ---------------------------------------------------------------------------
 
 /** Where a remembered item came from, so it can be traced back and trusted. */
-export type Provenance = "fact" | "inference" | "human";
+export type Provenance = "fact" | "inference" | "human" | "research";
 
 /**
  * One remembered item. Facts are quoted from the prospect; inferences are the
  * model's reading; human entries are corrections a person made and must not be
- * silently overwritten.
+ * silently overwritten; research is what we found out about them ourselves and
+ * which they have never told us.
  */
 export type MemoryItem = {
   value: string;
@@ -137,6 +138,8 @@ export type LeadMemory = {
   lead_id: string;
   relationship_summary: string | null;
   facts_known: MemoryItem[];
+  /** What we found out about them, which they have not told us themselves. */
+  research_facts: MemoryItem[];
   businesses: MemoryItem[];
   goals: MemoryItem[];
   personal_goals: MemoryItem[];

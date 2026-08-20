@@ -14,6 +14,7 @@ import type { LeadMemory, MemoryItem } from "@/lib/types";
 
 const EDITABLE_FIELDS = [
   ["businesses", "Businesses"],
+  ["research_facts", "Researched (not from them)"],
   ["goals", "Commercial goals"],
   ["pain_points", "Pain points"],
   ["media_history", "Media history"],
@@ -31,6 +32,7 @@ function ItemList({ items, verified }: { items: MemoryItem[] | undefined; verifi
         <li key={`${item.value}-${i}`}>
           {item.value}
           {item.provenance === "inference" && <span className="badge" style={{ marginLeft: 6 }}>inferred</span>}
+          {item.provenance === "research" && <span className="badge warn" style={{ marginLeft: 6 }}>researched</span>}
           {(item.verified || verified) && <span className="badge good" style={{ marginLeft: 6 }}>verified</span>}
           {item.quote && (
             <div className="muted" style={{ fontSize: 11, marginTop: 2 }}>

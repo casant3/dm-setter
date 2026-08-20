@@ -14,6 +14,7 @@ import type { LeadMemory, MemoryItem, Message, Provenance, Strategy } from "@/li
 /** Memory fields holding lists of remembered items. */
 export const MEMORY_LIST_FIELDS = [
   "facts_known",
+  "research_facts",
   "businesses",
   "goals",
   "personal_goals",
@@ -62,7 +63,7 @@ export function makeItem(
   return {
     value: value.trim(),
     provenance,
-    confidence: options.verified ? 1 : (options.confidence ?? (provenance === "fact" ? 0.9 : 0.6)),
+    confidence: options.verified ? 1 : (options.confidence ?? (provenance === "fact" ? 0.9 : provenance === "research" ? 0.7 : 0.6)),
     source_message_id: options.source_message_id ?? null,
     quote: options.quote ?? null,
     recorded_at: new Date().toISOString(),

@@ -183,9 +183,11 @@ export async function enrichContext(
 // ---------------------------------------------------------------------------
 
 function itemValues(items: MemoryItem[] | undefined, limit = 12): string[] {
-  return (items ?? [])
-    .slice(-limit)
-    .map((i) => (i.provenance === "inference" ? `${i.value} (inferred)` : i.value));
+  return (items ?? []).slice(-limit).map((i) => {
+    if (i.provenance === "inference") return `${i.value} (inferred)`;
+    if (i.provenance === "research") return `${i.value} (researched — they have not told us this)`;
+    return i.value;
+  });
 }
 
 function summariseChunk(c: { outcome: string | null; outcome_tier: string | null; stage: string | null; niche: string | null; content: string; setter_name: string | null; match_reasons?: string[]; metadata: Record<string, unknown> | null }) {
@@ -250,6 +252,11 @@ export function compactContext(ctx: LeadContext): string {
             commercial_goals: itemValues(m.goals),
             personal_goals: itemValues(m.personal_goals),
             facts_known: itemValues(m.facts_known),
+            researched_about_them: itemValues(m.research_facts),
+            research_note:
+              (m.research_facts?.length ?? 0) > 0
+                ? "We found these ourselves. They have never told us any of it. You may refer to something publicly visible ('saw you opened the second clinic'), but never imply they told you, and never use anything that would be unsettling to hear back from a stranger."
+                : null,
             pain_points: itemValues(m.pain_points),
             interests: itemValues(m.interests),
             media_history: itemValues(m.media_history),
