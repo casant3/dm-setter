@@ -1,4 +1,10 @@
+import { classifyBrushOff, clarificationAlreadyUsed, type BrushOffAssessment } from "@/core/brush-off";
 import { rankCredibility } from "@/core/credibility";
+import { buildDialogueState, summariseDialogueState, type DialogueState } from "@/core/dialogue-state";
+import type { MessagePlan } from "@/core/message-plan";
+import { assessMotivation, FRAME_GUIDANCE, type MotivationAssessment } from "@/core/motivation";
+import { assessQualificationEvidence, type QualificationEvidence } from "@/core/qualification-evidence";
+import { assessTemperature, type TemperatureAssessment } from "@/core/temperature";
 import { recomputeUnderstanding } from "@/core/memory";
 import { CASSEY, buildQueryText, rerankAndBucket } from "@/core/retrieval";
 import type { Store } from "@/lib/store/store";
@@ -25,6 +31,20 @@ export type LeadContext = {
   recentMessages: Message[];
   /** Every prospect message, used for understanding — not sent to the model. */
   allProspectMessages: Message[];
+  /** The whole thread, used for the deterministic assessments below. */
+  allMessages: Message[];
+  /** What has already been asked and answered, semantically. */
+  dialogue: DialogueState;
+  /** What they are actually motivated by, and how not to frame it. */
+  motivation: MotivationAssessment;
+  /** How engaged they are right now. */
+  temperature: TemperatureAssessment;
+  /** Their latest decline, if the latest message is one. */
+  brushOff: BrushOffAssessment;
+  /** Whether the one post-brush-off clarification has been used. */
+  clarificationSpent: boolean;
+  /** Evidence behind each qualification dimension. */
+  evidence: QualificationEvidence;
   events: ConversationEvent[];
   credibility: CredibilityAsset[];
   examples: RetrievedExamples;
@@ -32,6 +52,8 @@ export type LeadContext = {
   newMessage: string;
   /** Populated once the strategy pass has run. */
   strategy?: Strategy;
+  /** Populated once the gate has been evaluated. */
+  plan?: MessagePlan;
 };
 
 /**
@@ -52,20 +74,38 @@ export async function loadLeadContext(store: Store, leadId: string, newMessage: 
     store.listMessages(lead.id),
   ]);
 
-  const allProspectMessages = allMessages.filter((m) => m.sender === "prospect");
-  const forUnderstanding = newMessage.trim()
-    ? [...allProspectMessages, { id: "", message_text: newMessage, sent_at: new Date().toISOString() } as Message]
-    : allProspectMessages;
+  // The incoming message is not persisted yet, so it is appended here — every
+  // deterministic assessment must see what they just said.
+  const pending: Message | null = newMessage.trim()
+    ? ({ id: "pending", lead_id: lead.id, sender: "prospect", message_text: newMessage, sent_at: new Date().toISOString() } as Message)
+    : null;
+  const withPending = pending ? [...allMessages, pending] : allMessages;
+  const allProspectMessages = withPending.filter((m) => m.sender === "prospect");
+
+  const understanding = recomputeUnderstanding(memory, allProspectMessages);
+  const dialogue = buildDialogueState(withPending, memory);
+  const latest = allProspectMessages[allProspectMessages.length - 1] ?? null;
+  const brushOff = classifyBrushOff(latest, {
+    understandsService: understanding.level >= 2,
+    serviceExplained: Boolean(memory?.service_explained),
+  });
 
   return {
     lead,
     memory,
     recentMessages: [...recent].reverse(),
     allProspectMessages,
+    allMessages: withPending,
+    dialogue,
+    motivation: assessMotivation(allProspectMessages, memory),
+    temperature: assessTemperature(withPending, dialogue),
+    brushOff,
+    clarificationSpent: clarificationAlreadyUsed(withPending, brushOff.message_id),
+    evidence: assessQualificationEvidence({ lead, memory, messages: withPending, dialogue, understanding }),
     events,
     credibility: [],
     examples: { strong_winners: [], partial_wins: [], failures: [], voice_examples: [] },
-    understanding: recomputeUnderstanding(memory, forUnderstanding),
+    understanding,
     newMessage,
   };
 }
@@ -204,6 +244,56 @@ export function compactContext(ctx: LeadContext): string {
             ? null
             : "They asked about cost before we made the commercial model clear. They do NOT hold a wrong premise about what we are, so do not correct one. State plainly that this is a paid service and what it does, then continue.",
       },
+      conversation_state: {
+        ...summariseDialogueState(ctx.dialogue),
+        note: "This ledger is computed from the messages themselves. Treat it as fact. Never ask again about anything listed as already answered, however differently you would word it.",
+      },
+      motivation: {
+        primary_frame: ctx.motivation.primary,
+        all_frames: ctx.motivation.frames.map((f) => ({ frame: f.frame, their_words: f.quote })),
+        talk_about: ctx.motivation.guidance,
+        avoid: ctx.motivation.primary ? FRAME_GUIDANCE[ctx.motivation.primary].avoid : null,
+        avoid_money_framing: ctx.motivation.avoid_money_framing,
+        note: ctx.motivation.primary
+          ? "Frame value in these terms. A commercial goal is whatever they are working toward — it is not always money."
+          : "No motivation evidenced yet. Ask rather than assume what they care about.",
+      },
+      engagement: {
+        temperature: ctx.temperature.temperature,
+        signals: ctx.temperature.signals,
+        guidance: ctx.temperature.guidance,
+      },
+      latest_message_reading:
+        ctx.brushOff.kind === "none"
+          ? null
+          : {
+              kind: ctx.brushOff.kind,
+              their_words: ctx.brushOff.quote,
+              meaning: ctx.brushOff.reason,
+              clarification_already_used: ctx.clarificationSpent,
+              must_stop: ctx.brushOff.should_disengage,
+            },
+      qualification_evidence: Object.values(ctx.evidence).map((d) => ({
+        dimension: d.dimension,
+        evidence_supports: d.evidenced,
+        why: d.reason,
+        quotes: d.quotes,
+      })),
+      qualification_evidence_note:
+        "Score each dimension from this evidence. If you score above what the evidence supports, you must supply the exact quote that justifies it in `evidence`; unverifiable quotes are discarded and the score is capped.",
+      message_plan: ctx.plan
+        ? {
+            move: ctx.plan.move,
+            purpose: ctx.plan.purpose,
+            desired_response: ctx.plan.desired_response,
+            next_if_positive: ctx.plan.next_if_positive,
+            next_if_negative: ctx.plan.next_if_negative,
+            next_if_no_reply: ctx.plan.next_if_no_reply,
+            forbidden_moves: ctx.plan.forbidden,
+            ask_about: ctx.plan.ask_topic,
+            note: "Make exactly this move. One move per message.",
+          }
+        : null,
       qualification_state: ctx.strategy
         ? {
             stage: ctx.strategy.stage,

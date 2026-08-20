@@ -137,6 +137,24 @@ export function CopilotPanel({
                 </div>
               )}
 
+              {!strategy.service_confusion && result?.understanding.commercial_clarity_needed && (
+                <div className="banner warn">
+                  <strong>They asked about cost before we made the model clear</strong>
+                  {result.understanding.commercial_clarity_needed} — say plainly that this is a paid service. This is
+                  not a wrong premise about what we are, so do not correct one.
+                </div>
+              )}
+
+              {result?.audit && !result.audit.ok && (
+                <div className="banner bad">
+                  <strong>This message fails a deterministic check</strong>
+                  {result.audit.violations
+                    .filter((v) => v.severity === "hard")
+                    .map((v) => v.detail)
+                    .join(" · ")}
+                </div>
+              )}
+
               {gate.passed ? (
                 <div className="banner good">
                   <strong>Call-ready</strong>
@@ -205,6 +223,48 @@ export function CopilotPanel({
                   </p>
                 )}
               </div>
+
+              {result?.plan && (
+                <div className="card">
+                  <h3>What this message does</h3>
+                  <p style={{ margin: "0 0 8px" }}>
+                    <span className="pill">{result.plan.move.replace(/_/g, " ")}</span> {result.plan.purpose}
+                  </p>
+                  <p className="muted" style={{ margin: "0 0 8px" }}>
+                    Trying to get back: {result.plan.desired_response}
+                  </p>
+                  <ul className="list">
+                    <li>If they engage: {result.plan.next_if_positive}</li>
+                    <li>If they push back: {result.plan.next_if_negative}</li>
+                    <li>If they go quiet: {result.plan.next_if_no_reply}</li>
+                  </ul>
+                  <p className="muted" style={{ margin: 0 }}>
+                    {result.audit.words} words · {result.audit.ok ? "passes the style and one-move checks" : "flagged above"}
+                  </p>
+                </div>
+              )}
+
+              {result?.read && (
+                <div className="card">
+                  <h3>Read on them</h3>
+                  <p style={{ margin: "0 0 8px" }}>
+                    <span className="pill">{result.read.temperature.replace(/_/g, " ")}</span>
+                    {result.read.motivation ? (
+                      <span className="pill" style={{ marginLeft: 6 }}>
+                        motivated by {result.read.motivation.replace(/_/g, " ")}
+                      </span>
+                    ) : null}
+                    {result.read.brush_off ? (
+                      <span className="pill" style={{ marginLeft: 6 }}>{result.read.brush_off.replace(/_/g, " ")}</span>
+                    ) : null}
+                  </p>
+                  {result.read.already_answered.length > 0 && (
+                    <p className="muted" style={{ margin: 0 }}>
+                      Already answered — never ask again: {result.read.already_answered.map((t) => t.replace(/_/g, " ")).join(", ")}
+                    </p>
+                  )}
+                </div>
+              )}
 
               <div className="card">
                 <h3>Qualification</h3>

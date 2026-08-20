@@ -14,43 +14,26 @@ import type { Qualification, Review, Strategy } from "@/lib/types";
  * GPT-5.6.
  */
 
-const VALUE_WORDS = [
-  "credibility", "authority", "search", "seo", "syndication", "written media",
-  "positioning", "diligence", "third-party", "press", "coverage",
-];
-
 function lower(s: string | null | undefined): string {
   return (s ?? "").toLowerCase();
 }
 
+/**
+ * Scores straight from the deterministic evidence assessor.
+ *
+ * The stand-in has no judgement to add, and scoring it any other way would let
+ * the offline path disagree with the evidence the gate is checked against.
+ */
 function scoreQualification(ctx: LeadContext): Qualification {
-  const lead = ctx.lead;
-  const memory = ctx.memory;
-
-  const fit = lead.industry && lead.niche ? 2 : lead.industry || lead.niche ? 1 : 0;
-
-  const goalsKnown = (memory?.goals?.length ?? 0) > 0;
-  const commercial_goal = lead.commercial_goal && goalsKnown ? 2 : lead.commercial_goal || goalsKnown ? 1 : 0;
-
-  const painKnown = (memory?.pain_points?.length ?? 0) > 0;
-  const media_gap = lead.media_gap && painKnown ? 2 : lead.media_gap || painKnown ? 1 : 0;
-
-  const setterText = ctx.recentMessages
-    .filter((m) => m.sender === "setter")
-    .map((m) => lower(m.message_text))
-    .join(" ");
-  const valueHits = VALUE_WORDS.filter((w) => setterText.includes(w)).length;
-  const value_established = valueHits >= 3 ? 2 : valueHits >= 1 ? 1 : 0;
-
-  // Never derived from our own explanation — comes from the evidence assessor.
-  const service_understanding = ctx.understanding.level;
-
-  const buying = (memory?.buying_signals?.length ?? 0) > 0 || ctx.allProspectMessages.some((m) => m.is_buying_signal);
-  const interest = lower(lead.interest_level);
-  const replied = ctx.allProspectMessages.length > 0;
-  const interest_signal = buying || interest === "hot" ? 2 : interest === "warm" || replied ? 1 : 0;
-
-  return { fit, commercial_goal, media_gap, value_established, service_understanding, interest_signal };
+  const e = ctx.evidence;
+  return {
+    fit: e.fit.evidenced,
+    commercial_goal: e.commercial_goal.evidenced,
+    media_gap: e.media_gap.evidenced,
+    value_established: e.value_established.evidenced,
+    service_understanding: ctx.understanding.level,
+    interest_signal: e.interest_signal.evidenced,
+  };
 }
 
 function pickObjective(q: Qualification, confused: boolean): { stage: string; objective: string; strategy: string } {
@@ -140,7 +123,8 @@ function buildStrategy(ctx: LeadContext): Strategy {
     missing_information: missing,
     credibility_needed: q.value_established < 2 && ctx.credibility.length > 0,
     credibility_reason: q.value_established < 2 ? "Value is still abstract; approved proof would make it concrete." : null,
-    should_explain_service: confused || q.service_understanding < 1,
+    should_explain_service: confused || ctx.understanding.commercial_clarity_needed !== null || q.service_understanding < 1,
+    evidence: [],
   };
 }
 
@@ -155,6 +139,20 @@ function buildReply(ctx: LeadContext, strategy: Strategy): string {
   const goal = ctx.lead.commercial_goal;
   const gap = ctx.lead.media_gap;
   const q = strategy.qualification;
+
+  // The plan, where one has been made, decides the move.
+  switch (ctx.plan?.move) {
+    case "respect_rejection":
+      return `Understood — I'll leave it there. If it ever becomes relevant, you know where I am.`;
+    case "park_and_agree_time":
+      return `Makes sense, timing is everything. I'll leave it for now — worth me checking back in when that's behind you?`;
+    case "clarify_commercial":
+      return `Fair question — this is a paid service rather than a free feature. We handle the placements and the positioning around them for clients, and it's priced accordingly.`;
+    case "clarify_after_brushoff":
+      return `No worries — probably worth saying I'm not pitching a guest spot. We build out media and search presence for people so there's third-party proof behind their name. Leave it with you either way.`;
+    default:
+      break;
+  }
 
   if (strategy.service_confusion) {
     const anchor = goal ? ` Given ${lower(goal)}, that's the part that actually matters.` : "";
@@ -220,7 +218,11 @@ function buildReview(ctx: LeadContext, strategy: Strategy, draft: string): Revie
     approved: issues.length === 0,
     issues,
     final_reply: final,
-    message_purpose: strategy.next_objective,
+    message_purpose: ctx.plan?.purpose ?? strategy.next_objective,
+    desired_response: ctx.plan?.desired_response,
+    next_if_positive: ctx.plan?.next_if_positive,
+    next_if_negative: ctx.plan?.next_if_negative,
+    next_if_no_reply: ctx.plan?.next_if_no_reply,
   };
 }
 

@@ -6,5 +6,6 @@ export interface SetterLlm {
   readonly engine: "openai" | "offline";
   strategy(ctx: LeadContext, contextJson: string): Promise<Strategy>;
   reply(ctx: LeadContext, contextJson: string, strategy: Strategy): Promise<string>;
-  review(ctx: LeadContext, contextJson: string, strategy: Strategy, draft: string): Promise<Review>;
+  /** `audit` is the deterministic finding list the reviewer must clear. */
+  review(ctx: LeadContext, contextJson: string, strategy: Strategy, draft: string, audit: string): Promise<Review>;
 }

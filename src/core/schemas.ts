@@ -26,6 +26,20 @@ export const strategySchema = {
     credibility_needed: { type: "boolean" },
     credibility_reason: { type: ["string", "null"] },
     should_explain_service: { type: "boolean" },
+    evidence: {
+      type: "array",
+      description:
+        "For every dimension you scored above what qualification_evidence supports, the exact words from the conversation that justify it. Quotes are verified verbatim; an invented quote is discarded and the score capped.",
+      items: {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          dimension: { type: "string" },
+          quote: { type: "string" },
+        },
+        required: ["dimension", "quote"],
+      },
+    },
   },
   required: [
     "stage",
@@ -40,6 +54,7 @@ export const strategySchema = {
     "credibility_needed",
     "credibility_reason",
     "should_explain_service",
+    "evidence",
   ],
 } as const;
 
@@ -51,8 +66,21 @@ export const reviewSchema = {
     issues: { type: "array", items: { type: "string" } },
     final_reply: { type: "string" },
     message_purpose: { type: "string" },
+    desired_response: { type: "string", description: "The reply this message is trying to provoke." },
+    next_if_positive: { type: "string" },
+    next_if_negative: { type: "string" },
+    next_if_no_reply: { type: "string" },
   },
-  required: ["approved", "issues", "final_reply", "message_purpose"],
+  required: [
+    "approved",
+    "issues",
+    "final_reply",
+    "message_purpose",
+    "desired_response",
+    "next_if_positive",
+    "next_if_negative",
+    "next_if_no_reply",
+  ],
 } as const;
 
 /** Schema for the optional model-driven memory extraction pass. */

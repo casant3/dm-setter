@@ -234,6 +234,13 @@ export type Qualification = {
   interest_signal: number;
 };
 
+/** A score the strategist claims, with the quote it says supports it. */
+export type ClaimedDimensionEvidence = {
+  dimension: string;
+  quote: string;
+  message_id?: string | null;
+};
+
 export type Strategy = {
   stage: string;
   qualification: Qualification;
@@ -247,6 +254,10 @@ export type Strategy = {
   credibility_needed: boolean;
   credibility_reason: string | null;
   should_explain_service: boolean;
+  /** Quotes the strategist offers for the scores it gave. Verified before use. */
+  evidence?: ClaimedDimensionEvidence[];
+  /** Scores the evidence would not support, and what they were reduced to. */
+  evidence_adjustments?: string[];
 };
 
 export type Review = {
@@ -255,6 +266,11 @@ export type Review = {
   final_reply: string;
   /** What this specific message is for, per the reviewer checklist. */
   message_purpose?: string;
+  /** The forward path: what we want back, and what we do with each outcome. */
+  desired_response?: string;
+  next_if_positive?: string;
+  next_if_negative?: string;
+  next_if_no_reply?: string;
 };
 
 export type AiSuggestion = {
@@ -299,6 +315,29 @@ export type AgentResult = {
     service_explained: boolean;
     evidence: unknown[];
     confusion_reason: string | null;
+    commercial_clarity_needed: string | null;
+  };
+  /** The one move this message makes, and what happens after they reply. */
+  plan: {
+    move: string;
+    purpose: string;
+    desired_response: string;
+    next_if_positive: string;
+    next_if_negative: string;
+    next_if_no_reply: string;
+  };
+  /** Deterministic checks on the message actually being suggested. */
+  audit: {
+    ok: boolean;
+    violations: { rule: string; detail: string; severity: "hard" | "soft" }[];
+    words: number;
+  };
+  /** How the prospect is engaging, and what they have already told us. */
+  read: {
+    temperature: string;
+    motivation: string | null;
+    already_answered: string[];
+    brush_off: string | null;
   };
   engine: "openai" | "offline";
   timings: Record<string, number>;

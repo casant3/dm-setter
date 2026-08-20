@@ -23,6 +23,8 @@ export const openaiLlm: SetterLlm = {
       instructions: SYSTEM_PROMPT,
       input: `Analyze the lead state before writing anything. Decide the next sales objective.
 
+Score every dimension from qualification_evidence. Where you score higher than the evidence supports, put the exact words from the conversation that justify it in the "evidence" field — quotes are checked verbatim against the real messages and unverifiable ones are discarded.
+
 Score service_understanding ONLY from the prospect's own words. Our own explanation does not raise it. If the prospect has shown confusion about what this is, set service_confusion and score service_understanding 0.
 
 CONTEXT
@@ -41,7 +43,9 @@ ${context}`,
     const r = (await getOpenAI().responses.create({
       model,
       instructions: SYSTEM_PROMPT,
-      input: `Write ONE exact Instagram DM for Cassey to send next. No explanation, no alternatives. Follow the strategy and the actual conversation. Do not force a CTA if not call-ready. Learn tone from voice_examples and strategy from similar_strong_winners; never imitate similar_failures.
+      input: `Write ONE exact Instagram DM for Cassey to send next. No explanation, no alternatives.
+
+Make exactly the move in message_plan, and only that move. Never ask about anything conversation_state lists as already answered. Frame value in the terms given under motivation. Match the engagement guidance. Learn tone from voice_examples and strategy from similar_strong_winners; never imitate similar_failures.
 
 STRATEGY
 ${JSON.stringify(strategy, null, 2)}
@@ -53,13 +57,15 @@ ${context}`,
     return r.output_text.trim();
   },
 
-  async review(_ctx, context, strategy, draft) {
+  async review(_ctx, context, strategy, draft, audit) {
     const model = reviewModel();
     const started = Date.now();
     const r = (await getOpenAI().responses.create({
       model,
       instructions: SYSTEM_PROMPT,
       input: `${REVIEWER_CHECKLIST}
+
+${audit}
 
 STRATEGY
 ${JSON.stringify(strategy, null, 2)}

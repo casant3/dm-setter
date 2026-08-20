@@ -33,6 +33,7 @@ function strategyWith(overrides: Partial<Strategy> = {}): Strategy {
     credibility_needed: false,
     credibility_reason: null,
     should_explain_service: false,
+    evidence: [],
     ...overrides,
   };
 }
@@ -251,4 +252,135 @@ test("defaultDeps selects the offline engine when no API key is configured", () 
   } finally {
     if (previous) process.env.OPENAI_API_KEY = previous;
   }
+});
+
+// ---------------------------------------------------------------------------
+// Message planning and the deterministic audit
+// ---------------------------------------------------------------------------
+
+test("every suggestion carries the move it makes and what happens after they reply", async () => {
+  const deps = await freshDeps();
+  const cody = await leadByHandle(deps, "codyalt");
+
+  const result = await runSetterForLead(cody.id, "how long is the pod?", deps);
+
+  assert.equal(result.plan.move, "correct_premise");
+  assert.ok(result.plan.purpose.length > 0);
+  assert.ok(result.plan.desired_response.length > 0);
+  assert.ok(result.plan.next_if_positive.length > 0);
+  assert.ok(result.plan.next_if_negative.length > 0);
+  assert.ok(result.plan.next_if_no_reply.length > 0);
+});
+
+test("a rewrite that re-asks an answered question is caught after the reviewer, not before", async () => {
+  const deps = await freshDeps();
+  const lead = await deps.store.createLead({ instagram_handle: "already_answered" });
+  await deps.store.appendMessages(lead.id, [
+    { sender: "setter", message_text: "Would you be open to hearing more about it?" },
+    { sender: "prospect", message_text: "Yeah I'm always open to opportunities." },
+  ]);
+
+  // A reviewer that approves a message repeating a question they already answered.
+  const sloppy = {
+    ...offlineLlm,
+    async review() {
+      return {
+        approved: true,
+        issues: [],
+        final_reply: "Would that be something you'd be open to exploring?",
+        message_purpose: "check interest",
+      };
+    },
+  };
+
+  const result = await runSetterForLead(lead.id, "sure", { ...deps, llm: sloppy });
+  assert.equal(result.audit.ok, false, "the audit runs on the final reply, not just the draft");
+  assert.ok(result.audit.violations.some((v) => v.rule === "already_answered"));
+  assert.equal(result.reviewer.approved, false, "an approval cannot survive a hard violation");
+  assert.ok(result.read.already_answered.includes("openness_interest"));
+});
+
+test("a model that invents a supporting quote gains nothing from it", async () => {
+  const deps = await freshDeps();
+  const lead = await deps.store.createLead({ instagram_handle: "quote_inventor" });
+  await deps.store.appendMessages(lead.id, [
+    { sender: "setter", message_text: "hey, saw your work" },
+    { sender: "prospect", message_text: "thanks" },
+  ]);
+
+  const fabricator = {
+    ...offlineLlm,
+    async strategy() {
+      return strategyWith({
+        evidence: [
+          { dimension: "media_gap", quote: "I really need press before my launch" },
+          { dimension: "commercial_goal", quote: "I am raising a Series A next quarter" },
+        ],
+      });
+    },
+  };
+
+  const result = await runSetterForLead(lead.id, "thanks", { ...deps, llm: fabricator });
+  assert.equal(result.strategy.qualification.media_gap, 0);
+  assert.equal(result.strategy.qualification.commercial_goal, 0);
+  assert.equal(result.gate.passed, false);
+  assert.ok(
+    (result.strategy.evidence_adjustments ?? []).some((a) => /not found in the conversation/.test(a)),
+    "the fabrication is recorded, not silently ignored",
+  );
+});
+
+test("a real quote from the conversation is accepted and lifts the score by one", async () => {
+  const deps = await freshDeps();
+  const lead = await deps.store.createLead({ instagram_handle: "quote_real" });
+  await deps.store.appendMessages(lead.id, [
+    { sender: "setter", message_text: "what are you working on?" },
+    { sender: "prospect", message_text: "I'm launching a second clinic in Q1" },
+  ]);
+
+  const honest = {
+    ...offlineLlm,
+    async strategy() {
+      return strategyWith({ evidence: [{ dimension: "commercial_goal", quote: "launching a second clinic in Q1" }] });
+    },
+  };
+
+  const result = await runSetterForLead(lead.id, "", { ...deps, llm: honest });
+  assert.equal(result.strategy.qualification.commercial_goal, 2, "one evidenced point plus one verified quote");
+});
+
+test("a goal the patterns miss still scores partially on a verified quote, never fully", async () => {
+  const deps = await freshDeps();
+  const lead = await deps.store.createLead({ instagram_handle: "quote_partial" });
+  await deps.store.appendMessages(lead.id, [
+    { sender: "setter", message_text: "what are you working on?" },
+    { sender: "prospect", message_text: "mainly getting the clinic in front of the right patients" },
+  ]);
+
+  const honest = {
+    ...offlineLlm,
+    async strategy() {
+      return strategyWith({
+        evidence: [{ dimension: "commercial_goal", quote: "getting the clinic in front of the right patients" }],
+      });
+    },
+  };
+
+  const result = await runSetterForLead(lead.id, "", { ...deps, llm: honest });
+  assert.equal(
+    result.strategy.qualification.commercial_goal,
+    1,
+    "the quote is real, so it counts — but one verified quote never buys a full score on its own",
+  );
+});
+
+test("the suggestion stored for a lead records the plan and the audit", async () => {
+  const deps = await freshDeps();
+  const cody = await leadByHandle(deps, "codyalt");
+  const result = await runSetterForLead(cody.id, "how long is the pod?", deps);
+
+  const [saved] = await deps.store.listSuggestions(cody.id);
+  const used = saved.context_used as { plan?: { move?: string }; audit?: { ok?: boolean } };
+  assert.equal(used.plan?.move, "correct_premise");
+  assert.equal(typeof used.audit?.ok, "boolean");
 });

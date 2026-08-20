@@ -422,6 +422,19 @@ textarea:focus {
   margin-bottom: 3px;
 }
 
+.pill {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--surface-2, rgba(255, 255, 255, 0.06));
+  border: 1px solid var(--border, rgba(255, 255, 255, 0.12));
+  font-size: 11px;
+  letter-spacing: 0.02em;
+  text-transform: lowercase;
+  color: var(--text-dim);
+  margin-right: 6px;
+}
+
 .meter {
   display: grid;
   grid-template-columns: 132px 1fr 26px;

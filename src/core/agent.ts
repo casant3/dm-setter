@@ -1,5 +1,8 @@
+import { auditDraft, auditForReviewer } from "@/core/audit";
 import { compactContext, enrichContext, loadLeadContext, type LeadContext } from "@/core/context";
 import { evaluateGate, totalScore } from "@/core/gate";
+import { planMessage } from "@/core/message-plan";
+import { reconcileQualification } from "@/core/qualification-evidence";
 import { applyExchangeToMemory } from "@/core/memory";
 import { offlineLlm } from "@/core/offline-llm";
 import { openaiConfigured } from "@/core/openai";
@@ -32,9 +35,20 @@ export function defaultDeps(): AgentDeps {
  */
 function reconcileWithEvidence(strategy: Strategy, ctx: LeadContext): Strategy {
   const evidenced = ctx.understanding.level;
+
+  // Every dimension is capped at what the conversation actually evidences. A
+  // quote the strategist supplies is worth one extra point — but only once it
+  // has been found verbatim in the thread.
+  const { qualification: capped, adjustments } = reconcileQualification(
+    strategy.qualification,
+    ctx.evidence,
+    strategy.evidence ?? [],
+    ctx.allMessages,
+  );
+
   const qualification = {
-    ...strategy.qualification,
-    service_understanding: Math.min(strategy.qualification.service_understanding, evidenced),
+    ...capped,
+    service_understanding: Math.min(capped.service_understanding, evidenced),
   };
 
   const confusion = ctx.understanding.confusion;
@@ -44,6 +58,7 @@ function reconcileWithEvidence(strategy: Strategy, ctx: LeadContext): Strategy {
     ...strategy,
     qualification,
     total_score: totalScore(qualification),
+    evidence_adjustments: adjustments,
     service_confusion,
     confusion_reason: strategy.confusion_reason ?? confusion?.reason ?? null,
     should_explain_service:
@@ -73,6 +88,17 @@ export async function runSetterForContext(
   const gate = evaluateGate(strategy);
   strategy.call_ready = strategy.call_ready && gate.passed;
 
+  // One move, chosen deterministically from the state — not left to the writer.
+  const plan = planMessage({
+    dialogue: ctx.dialogue,
+    understanding: ctx.understanding,
+    brushOff: ctx.brushOff,
+    temperature: ctx.temperature,
+    gate,
+    clarificationSpent: ctx.clarificationSpent,
+  });
+  ctx.plan = plan;
+
   // Pass 2: retrieval and credibility, now that we know the objective.
   const { result: enriched, ms: retrievalMs } = await timed(
     "retrieval",
@@ -88,10 +114,30 @@ export async function runSetterForContext(
   const { result: draft, ms: writeMs } = await timed("write", () => deps.llm.reply(enriched, context, strategy));
   timings.write = writeMs;
 
-  const { result: reviewer, ms: reviewMs } = await timed("review", () => deps.llm.review(enriched, context, strategy, draft));
+  const auditInput = { dialogue: ctx.dialogue, motivation: ctx.motivation, plan };
+  const draftAudit = auditDraft(draft, auditInput);
+
+  const { result: reviewer, ms: reviewMs } = await timed("review", () =>
+    deps.llm.review(enriched, context, strategy, draft, auditForReviewer(draftAudit)),
+  );
   timings.review = reviewMs;
 
   const finalReply = reviewer.final_reply?.trim() || draft;
+
+  // The same checks run again on what the reviewer produced: a rewrite must not
+  // reintroduce what the draft was rejected for.
+  const finalAudit = auditDraft(finalReply, auditInput);
+  const review: typeof reviewer = {
+    ...reviewer,
+    final_reply: finalReply,
+    approved: reviewer.approved && finalAudit.ok,
+    issues: [...reviewer.issues, ...finalAudit.violations.filter((v) => v.severity === "hard").map((v) => v.detail)],
+    message_purpose: reviewer.message_purpose || plan.purpose,
+    desired_response: reviewer.desired_response || plan.desired_response,
+    next_if_positive: reviewer.next_if_positive || plan.next_if_positive,
+    next_if_negative: reviewer.next_if_negative || plan.next_if_negative,
+    next_if_no_reply: reviewer.next_if_no_reply || plan.next_if_no_reply,
+  };
 
   let suggestionId: string | null = null;
   if (options.persist !== false) {
@@ -107,7 +153,13 @@ export async function runSetterForContext(
           level: enriched.understanding.level,
           service_explained: Boolean(ctx.memory?.service_explained),
           confusion: enriched.understanding.confusion?.reason ?? null,
+          commercial_clarity_needed: enriched.understanding.commercial_clarity_needed?.reason ?? null,
         },
+        plan,
+        audit: finalAudit,
+        evidence_adjustments: strategy.evidence_adjustments ?? [],
+        temperature: ctx.temperature.temperature,
+        motivation: ctx.motivation.primary,
         credibility_used: enriched.credibility.map((c) => c.name),
         example_tiers: {
           strong: enriched.examples.strong_winners.map((c) => c.outcome_tier),
@@ -130,7 +182,7 @@ export async function runSetterForContext(
     suggestion_id: suggestionId,
     strategy,
     reply: draft,
-    reviewer: { ...reviewer, final_reply: finalReply },
+    reviewer: review,
     gate,
     examples: enriched.examples,
     credibility_used: enriched.credibility,
@@ -139,6 +191,26 @@ export async function runSetterForContext(
       service_explained: Boolean(ctx.memory?.service_explained),
       evidence: enriched.understanding.evidence,
       confusion_reason: enriched.understanding.confusion?.reason ?? null,
+      commercial_clarity_needed: enriched.understanding.commercial_clarity_needed?.reason ?? null,
+    },
+    plan: {
+      move: plan.move,
+      purpose: review.message_purpose ?? plan.purpose,
+      desired_response: review.desired_response ?? plan.desired_response,
+      next_if_positive: review.next_if_positive ?? plan.next_if_positive,
+      next_if_negative: review.next_if_negative ?? plan.next_if_negative,
+      next_if_no_reply: review.next_if_no_reply ?? plan.next_if_no_reply,
+    },
+    audit: {
+      ok: finalAudit.ok,
+      violations: finalAudit.violations,
+      words: finalAudit.words,
+    },
+    read: {
+      temperature: ctx.temperature.temperature,
+      motivation: ctx.motivation.primary,
+      already_answered: ctx.dialogue.do_not_ask,
+      brush_off: ctx.brushOff.kind === "none" ? null : ctx.brushOff.kind,
     },
     engine: deps.llm.engine,
     timings,
