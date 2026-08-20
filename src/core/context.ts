@@ -197,7 +197,12 @@ export function compactContext(ctx: LeadContext): string {
         service_understanding: ctx.understanding.level,
         understanding_evidence: ctx.understanding.evidence,
         service_confusion: ctx.understanding.confusion,
+        commercial_clarity_needed: ctx.understanding.commercial_clarity_needed,
         note: "service_explained means WE explained it. service_understanding is evidenced only by the prospect's own words.",
+        clarity_note:
+          ctx.understanding.commercial_clarity_needed === null
+            ? null
+            : "They asked about cost before we made the commercial model clear. They do NOT hold a wrong premise about what we are, so do not correct one. State plainly that this is a paid service and what it does, then continue.",
       },
       qualification_state: ctx.strategy
         ? {

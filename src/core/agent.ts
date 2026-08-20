@@ -46,7 +46,11 @@ function reconcileWithEvidence(strategy: Strategy, ctx: LeadContext): Strategy {
     total_score: totalScore(qualification),
     service_confusion,
     confusion_reason: strategy.confusion_reason ?? confusion?.reason ?? null,
-    should_explain_service: strategy.should_explain_service || service_confusion || evidenced < 1,
+    should_explain_service:
+      strategy.should_explain_service ||
+      service_confusion ||
+      ctx.understanding.commercial_clarity_needed !== null ||
+      evidenced < 1,
   };
 }
 

@@ -73,12 +73,20 @@ test("every documented confusion phrase is detected", () => {
     "Is this a collaboration?",
     "I don't pay to go on podcasts.",
     "Are you inviting me on?",
-    "Is this free?",
-    "Is there a cost?",
   ];
   for (const p of phrases) {
     assert.ok(detectConfusion(p) !== null, `should flag: ${p}`);
   }
+});
+
+test("cost questions are not documented confusion phrases", () => {
+  // They were once listed as such, which made the setter correct a premise the
+  // prospect never held. Their meaning is resolved by assessUnderstanding instead.
+  for (const p of ["Is this free?", "Is there a cost?"]) {
+    assert.equal(detectConfusion(p), null, `should not be premise confusion: ${p}`);
+  }
+  assert.ok(assessUnderstanding(msgs("Is there a cost?"), false).commercial_clarity_needed);
+  assert.equal(assessUnderstanding(msgs("Is there a cost?"), true).level, 2);
 });
 
 test("ordinary sales conversation is not mistaken for confusion", () => {

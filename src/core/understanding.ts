@@ -18,16 +18,30 @@ export type UnderstandingEvidence = {
   reason: string;
 };
 
+export type ConfusionSignal = { reason: string; quote: string; message_id: string | null };
+
 export type UnderstandingAssessment = {
   /** 0 = not established, 1 = partial, 2 = clearly understands. */
   level: 0 | 1 | 2;
   evidence: UnderstandingEvidence[];
-  /** Set when the prospect reveals they misunderstand what is on offer. */
-  confusion: { reason: string; quote: string; message_id: string | null } | null;
+  /**
+   * The prospect misunderstands WHAT is on offer — they think it is a podcast
+   * booking, guest spot or free collaboration. This closes the call gate.
+   */
+  confusion: ConfusionSignal | null;
+  /**
+   * The prospect understands it is a service but not that it is PAID. A softer
+   * state than confusion: it needs commercial clarity, not a premise correction.
+   */
+  commercial_clarity_needed: ConfusionSignal | null;
 };
 
-/** Phrases that reveal the prospect thinks this is a guest spot, freebie or collab. */
-const CONFUSION_PATTERNS: { re: RegExp; reason: string }[] = [
+/**
+ * Unambiguous service confusion: the prospect has the wrong model of WHAT this
+ * is — a podcast booking, a guest spot, a free collaboration. These never depend
+ * on context; correcting the premise is always the right move.
+ */
+const HARD_CONFUSION_PATTERNS: { re: RegExp; reason: string }[] = [
   { re: /\bhow long is the (pod|podcast|episode|show)\b/i, reason: "Thinks they are being booked onto a podcast episode" },
   { re: /\bwhat (show|podcast) is this( for)?\b/i, reason: "Thinks this is a specific podcast booking" },
   { re: /\bwhich podcast\b/i, reason: "Thinks this is a specific podcast booking" },
@@ -42,9 +56,39 @@ const CONFUSION_PATTERNS: { re: RegExp; reason: string }[] = [
   { re: /\bare you looking for guests\b/i, reason: "Thinks we are booking podcast guests" },
   { re: /\b(i )?(don'?t|do not|dont) pay to (be on|go on|appear|get on)\b/i, reason: "Believes we are asking them to pay a podcast host" },
   { re: /\bpay to (be on|go on|appear on) (a )?(pod|podcast|show)\b/i, reason: "Believes we are asking them to pay a podcast host" },
-  { re: /\bis (this|it) free\b/i, reason: "Unclear whether this is a commercial service" },
-  { re: /\bis there (a|any) cost\b/i, reason: "Unclear whether this is a commercial service" },
   { re: /\bfree\b.*\b(collab|feature|interview|opportunity)\b/i, reason: "Expects a free opportunity" },
+  { re: /\bwhy would i pay to be a guest\b/i, reason: "Believes we are asking them to pay a podcast host" },
+];
+
+/**
+ * Cost questions whose meaning depends on what we have already said.
+ *
+ * "Is there a cost?" from someone who has been told this is a service is a
+ * buying question. The same words from someone who was pitched a vague
+ * "opportunity" mean we never made the commercial model clear. Treating both as
+ * podcast confusion — as this code previously did — makes the setter correct a
+ * premise the prospect never held.
+ */
+const AMBIGUOUS_COST_PATTERNS: { re: RegExp; reason: string }[] = [
+  { re: /\bis (this|it) free\b/i, reason: "Asked whether it is free — the commercial model is not clear yet" },
+  { re: /\bis there (a|any) (cost|charge|fee)\b/i, reason: "Asked whether there is a cost — the commercial model is not clear yet" },
+  { re: /\bdoes (this|it) cost\b/i, reason: "Asked whether it costs anything — the commercial model is not clear yet" },
+  { re: /\bany (cost|charge|fee)s?\b/i, reason: "Asked about cost — the commercial model is not clear yet" },
+];
+
+/**
+ * Explicit commercial/buying questions. These are positive evidence: you do not
+ * ask what something costs unless you already know it is being sold.
+ */
+const COMMERCIAL_QUESTION_PATTERNS: { re: RegExp; reason: string }[] = [
+  { re: /\bhow much (do|does|is|would|are|will)\b/i, reason: "Asked what it costs" },
+  { re: /\bwhat do(es)? (you|it|this) (guys )?charge\b/i, reason: "Asked what we charge" },
+  { re: /\bwhat.{0,20}\b(pricing|price|rates?|packages?|fees?|retainer)\b/i, reason: "Asked about pricing" },
+  { re: /\bwhat does (this|it|working with you) (cost|involve|look like|entail)\b/i, reason: "Asked what the engagement involves" },
+  { re: /\bwhat would (this|it) (cost|involve|look like)\b/i, reason: "Asked what the engagement involves" },
+  { re: /\b(price|pricing|cost) range\b/i, reason: "Asked about a price range" },
+  { re: /\bballpark\b/i, reason: "Asked for a ballpark price" },
+  { re: /\bhow do you charge\b/i, reason: "Asked how we charge" },
 ];
 
 /**
@@ -82,11 +126,35 @@ function normalize(text: string): string {
   return text.replace(/\s+/g, " ").trim();
 }
 
+/**
+ * Unambiguous service confusion only. Cost questions are deliberately excluded —
+ * use `classifyCostQuestion` for those, because their meaning depends on whether
+ * the commercial model has been explained.
+ */
 export function detectConfusion(text: string): { reason: string } | null {
-  for (const { re, reason } of CONFUSION_PATTERNS) {
+  for (const { re, reason } of HARD_CONFUSION_PATTERNS) {
     if (re.test(text)) return { reason };
   }
   return null;
+}
+
+export type CostQuestionKind = "commercial_question" | "ambiguous_cost" | null;
+
+/**
+ * Classifies money talk.
+ *
+ * An explicit "how much do you charge?" is always a buying question. A bare
+ * "is there a cost?" is ambiguous: it means the prospect is buying if we have
+ * explained the service, and that we were unclear if we have not.
+ */
+export function classifyCostQuestion(text: string): { kind: CostQuestionKind; reason: string } {
+  for (const { re, reason } of COMMERCIAL_QUESTION_PATTERNS) {
+    if (re.test(text)) return { kind: "commercial_question", reason };
+  }
+  for (const { re, reason } of AMBIGUOUS_COST_PATTERNS) {
+    if (re.test(text)) return { kind: "ambiguous_cost", reason };
+  }
+  return { kind: null, reason: "" };
 }
 
 /**
@@ -101,8 +169,10 @@ export function assessUnderstanding(
   serviceExplained: boolean,
 ): UnderstandingAssessment {
   const evidence: UnderstandingEvidence[] = [];
-  let confusion: UnderstandingAssessment["confusion"] = null;
+  let confusion: ConfusionSignal | null = null;
+  let commercialClarity: ConfusionSignal | null = null;
   let best: 0 | 1 | 2 = 0;
+  let lastClarityIndex = -1;
 
   // Order matters: confusion only counts while it is the prospect's most recent
   // signal. Understanding expressed afterwards means the confusion was resolved.
@@ -117,6 +187,29 @@ export function assessUnderstanding(
     if (conf) {
       confusion = { reason: conf.reason, quote: text.slice(0, 200), message_id: msg.id ?? null };
       lastConfusionIndex = index;
+      return;
+    }
+
+    // Money talk, resolved against what we have actually explained.
+    const cost = classifyCostQuestion(text);
+    if (cost.kind === "commercial_question") {
+      evidence.push({ quote: text.slice(0, 200), message_id: msg.id ?? null, at: msg.sent_at ?? null, strength: "strong", reason: cost.reason });
+      best = 2;
+      lastUnderstandingIndex = index;
+      return;
+    }
+    if (cost.kind === "ambiguous_cost") {
+      if (serviceExplained) {
+        // They know it is a service and are asking the price: a buying question.
+        evidence.push({ quote: text.slice(0, 200), message_id: msg.id ?? null, at: msg.sent_at ?? null, strength: "strong", reason: `${cost.reason} (asked after the service was explained, so treated as a buying question)` });
+        best = 2;
+        lastUnderstandingIndex = index;
+      } else {
+        // We never made the commercial model clear. Not podcast confusion —
+        // this needs commercial clarity, which is a different, softer move.
+        commercialClarity = { reason: cost.reason, quote: text.slice(0, 200), message_id: msg.id ?? null };
+        lastClarityIndex = index;
+      }
       return;
     }
 
@@ -158,9 +251,16 @@ export function assessUnderstanding(
   // who asks "what show is this?" and then asks about pricing has been corrected;
   // one who understood earlier and is now confused has not.
   const confusionStands = lastConfusionIndex >= 0 && lastConfusionIndex > lastUnderstandingIndex;
-  if (confusionStands) return { level: 0, evidence, confusion };
+  if (confusionStands) return { level: 0, evidence, confusion, commercial_clarity_needed: null };
 
-  return { level: best, evidence, confusion: null };
+  // Commercial clarity is a softer state: understanding is capped at partial
+  // rather than zeroed, because they grasp the offer but not that it is paid.
+  const clarityStands = lastClarityIndex >= 0 && lastClarityIndex > lastUnderstandingIndex;
+  if (clarityStands) {
+    return { level: Math.min(best, 1) as 0 | 1, evidence, confusion: null, commercial_clarity_needed: commercialClarity };
+  }
+
+  return { level: best, evidence, confusion: null, commercial_clarity_needed: null };
 }
 
 /** True when the prospect's latest message specifically shows confusion. */
