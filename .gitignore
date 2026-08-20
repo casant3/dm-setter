@@ -5,3 +5,8 @@ dist/
 .env.local
 .data/
 *.log
+tsconfig.tsbuildinfo
+next-env.d.ts
+
+# Real prospect data — never commit
+data/

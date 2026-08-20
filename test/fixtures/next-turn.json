@@ -1,0 +1,120 @@
+{
+  "note": "Synthetic conversation states. No real prospect data. Each case fixes the behaviour the operator asked for by name.",
+  "cases": [
+    {
+      "name": "he already said he's open to opportunities",
+      "why": "Operator rejection: 'he already said that'",
+      "messages": [
+        ["setter", "Would you be open to hearing more about it?"],
+        ["prospect", "Yeah I'm always open to opportunities."]
+      ],
+      "expect": { "must_not_reask": ["openness_interest"], "audit_ok": true }
+    },
+    {
+      "name": "he's down to hear it out",
+      "why": "Openness answered in different words still closes the topic",
+      "messages": [
+        ["setter", "Worth me explaining what we actually do?"],
+        ["prospect", "go on, I'm down to hear it out"]
+      ],
+      "expect": { "must_not_reask": ["openness_interest"], "audit_ok": true }
+    },
+    {
+      "name": "podcast confusion outranks everything",
+      "why": "A wrong premise must be corrected before anything else happens",
+      "messages": [
+        ["setter", "Saw your work — would you be open to getting in front of more people?"],
+        ["prospect", "how long is the pod and which show is it for?"]
+      ],
+      "expect": { "move": "correct_premise", "no_call": true, "audit_ok": true }
+    },
+    {
+      "name": "a pricing question is a buying question, not confusion",
+      "why": "Task 8: 'how much do you charge' was being treated as podcast confusion",
+      "messages": [
+        ["setter", "We handle placement across podcasts and written media for clients."],
+        ["prospect", "How much do you guys charge?"]
+      ],
+      "expect": { "not_move": "correct_premise", "understanding_at_least": 2 }
+    },
+    {
+      "name": "a cost question before we explained anything needs clarity, not correction",
+      "why": "Task 8: the softer state — they hold no wrong premise",
+      "messages": [
+        ["setter", "Saw your work, wanted to reach out."],
+        ["prospect", "is there a cost?"]
+      ],
+      "expect": { "move": "clarify_commercial", "no_call": true }
+    },
+    {
+      "name": "an uninformed brush-off gets one clarification",
+      "why": "They declined a vague approach, not the offer",
+      "messages": [
+        ["setter", "Hey, saw your clinic — mind if I share something?"],
+        ["prospect", "I'm good thanks"]
+      ],
+      "expect": { "move": "clarify_after_brushoff", "no_call": true }
+    },
+    {
+      "name": "an informed rejection is respected",
+      "why": "Pushing after a real no makes us a persistence bot",
+      "service_explained": true,
+      "messages": [
+        ["setter", "We work with clients on written media and search presence."],
+        ["prospect", "so you work with your clients on the search side too?"],
+        ["setter", "Exactly that."],
+        ["prospect", "I'm good thanks"]
+      ],
+      "expect": { "move": "respect_rejection", "no_call": true, "no_question": true }
+    },
+    {
+      "name": "a deferral is timing, not rejection",
+      "why": "A live lead with bad timing must not be argued with",
+      "service_explained": true,
+      "messages": [
+        ["setter", "Worth a look at what that would involve?"],
+        ["prospect", "not right now, circle back next quarter"]
+      ],
+      "expect": { "move": "park_and_agree_time", "no_call": true }
+    },
+    {
+      "name": "build more value, no call yet",
+      "why": "Operator rejection: 'build more value, no call yet'",
+      "messages": [
+        ["setter", "What are you building toward?"],
+        ["prospect", "I'm launching a supplement brand in Q1"],
+        ["setter", "What comes up when someone looks you up?"],
+        ["prospect", "honestly not much, no press at all"]
+      ],
+      "expect": { "no_call": true }
+    },
+    {
+      "name": "he doesn't seem like the money hungry type",
+      "why": "Operator rejection: money framing at a mission-driven prospect",
+      "messages": [
+        ["setter", "What's the main focus at the moment?"],
+        ["prospect", "honestly I'm mainly trying to educate more patients properly"]
+      ],
+      "expect": { "avoid_money_framing": true, "no_call": true }
+    },
+    {
+      "name": "this is too long",
+      "why": "Operator rejection: 'this is too long'",
+      "messages": [
+        ["setter", "Hey"],
+        ["prospect", "hi"]
+      ],
+      "expect": { "max_words": 70, "max_questions": 1 }
+    },
+    {
+      "name": "a slot has been picked, so ask for the email and nothing else",
+      "why": "Booking is a sequence; re-proposing the call loses it",
+      "service_explained": true,
+      "messages": [
+        ["setter", "Does Tuesday or Thursday work better?"],
+        ["prospect", "Thursday works"]
+      ],
+      "expect": { "move": "arrange_logistics", "no_call_pitch": true }
+    }
+  ]
+}

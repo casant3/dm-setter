@@ -1,73 +1,289 @@
-import { openai, setterModel, reviewModel } from "./openai.js";
-import { SYSTEM_PROMPT } from "./prompts.js";
-import { strategySchema, reviewSchema } from "./schemas.js";
-import { loadLeadContext } from "./context.js";
-import { db } from "./db.js";
-import type { AgentResult, Strategy } from "./types.js";
+import { auditDraft, auditForReviewer } from "@/core/audit";
+import { compactContext, enrichContext, loadLeadContext, type LeadContext } from "@/core/context";
+import { evaluateGate, totalScore } from "@/core/gate";
+import { planMessage } from "@/core/message-plan";
+import { reconcileQualification } from "@/core/qualification-evidence";
+import { applyExchangeToMemory } from "@/core/memory";
+import { memoryPatchFromExtraction, transcriptFor } from "@/core/memory-extract";
+import { offlineLlm } from "@/core/offline-llm";
+import { openaiConfigured } from "@/core/openai";
+import { openaiLlm } from "@/core/openai-llm";
+import { timed } from "@/core/observability";
+import type { SetterLlm } from "@/core/llm";
+import { getStore } from "@/lib/store";
+import type { Store } from "@/lib/store/store";
+import type { AgentResult, Strategy } from "@/lib/types";
 
-function compactContext(ctx: any) {
-  return JSON.stringify({
-    lead: ctx.lead,
-    lead_memory: ctx.memory,
-    recent_messages: ctx.recentMessages,
-    important_events: ctx.events,
-    approved_credibility_assets: ctx.credibility,
-    similar_successful_examples: ctx.similarWinners.map((x: any) => ({ outcome:x.outcome, stage:x.stage, content:x.content, metadata:x.metadata, similarity:x.similarity })),
-    similar_failed_examples: ctx.similarLosses.map((x: any) => ({ outcome:x.outcome, stage:x.stage, content:x.content, metadata:x.metadata, similarity:x.similarity })),
-    prospect_new_message: ctx.newMessage,
-  }, null, 2);
+export { evaluateGate } from "@/core/gate";
+
+export type AgentDeps = { store: Store; llm: SetterLlm; voiceSetter?: string };
+
+export function defaultDeps(): AgentDeps {
+  return {
+    store: getStore(),
+    llm: openaiConfigured() ? openaiLlm : offlineLlm,
+    voiceSetter: process.env.SETTER_VOICE || "Cassey",
+  };
 }
 
-async function getStrategy(context: string): Promise<Strategy> {
-  const r = await openai.responses.create({
-    model: setterModel,
-    instructions: SYSTEM_PROMPT,
-    input: `Analyze the lead state before writing anything. Decide the next sales objective.\n\nCONTEXT\n${context}`,
-    text: { format: { type: "json_schema", name: "setter_strategy", strict: true, schema: strategySchema } },
+/**
+ * Reconciles the model's qualification with what the conversation actually
+ * evidences.
+ *
+ * The strategist can be talked into a high service_understanding by its own
+ * explanation. Understanding is recomputed from the prospect's messages and the
+ * lower of the two is kept, so optimism can never open the gate.
+ */
+function reconcileWithEvidence(strategy: Strategy, ctx: LeadContext): Strategy {
+  const evidenced = ctx.understanding.level;
+
+  // Every dimension is capped at what the conversation actually evidences. A
+  // quote the strategist supplies is worth one extra point — but only once it
+  // has been found verbatim in the thread.
+  const { qualification: capped, adjustments } = reconcileQualification(
+    strategy.qualification,
+    ctx.evidence,
+    strategy.evidence ?? [],
+    ctx.allMessages,
+  );
+
+  const qualification = {
+    ...capped,
+    service_understanding: Math.min(capped.service_understanding, evidenced),
+  };
+
+  const confusion = ctx.understanding.confusion;
+  const service_confusion = strategy.service_confusion || confusion !== null;
+
+  return {
+    ...strategy,
+    qualification,
+    total_score: totalScore(qualification),
+    evidence_adjustments: adjustments,
+    service_confusion,
+    confusion_reason: strategy.confusion_reason ?? confusion?.reason ?? null,
+    should_explain_service:
+      strategy.should_explain_service ||
+      service_confusion ||
+      ctx.understanding.commercial_clarity_needed !== null ||
+      evidenced < 1,
+  };
+}
+
+/** Strategy → evidence reconciliation → hard gate → writer → reviewer → persist. */
+export async function runSetterForContext(
+  ctx: LeadContext,
+  deps: AgentDeps,
+  options: { persist?: boolean } = {},
+): Promise<AgentResult> {
+  const timings: Record<string, number> = {};
+
+  // Pass 1: strategy, on a cheap context with no embeddings computed yet.
+  const preContext = compactContext(ctx);
+  const { result: rawStrategy, ms: strategyMs } = await timed("strategy", () => deps.llm.strategy(ctx, preContext));
+  timings.strategy = strategyMs;
+
+  const strategy = reconcileWithEvidence(rawStrategy, ctx);
+
+  // The gate is deterministic and final: the model never overrides it.
+  const gate = evaluateGate(strategy);
+  strategy.call_ready = strategy.call_ready && gate.passed;
+
+  // One move, chosen deterministically from the state — not left to the writer.
+  const plan = planMessage({
+    dialogue: ctx.dialogue,
+    understanding: ctx.understanding,
+    brushOff: ctx.brushOff,
+    temperature: ctx.temperature,
+    gate,
+    clarificationSpent: ctx.clarificationSpent,
+    booking: ctx.booking,
+    noShow: ctx.noShow,
+    verifiedResearch: (ctx.memory?.research_facts ?? []).filter((f) => f.verified),
   });
-  return JSON.parse(r.output_text) as Strategy;
-}
+  ctx.plan = plan;
 
-async function writeReply(context: string, strategy: Strategy): Promise<string> {
-  const r = await openai.responses.create({
-    model: setterModel,
-    instructions: SYSTEM_PROMPT,
-    input: `Write ONE exact Instagram DM for Cassey to send next. No explanation. Follow the strategy and the actual conversation. Do not force a CTA if not call-ready.\n\nSTRATEGY\n${JSON.stringify(strategy,null,2)}\n\nCONTEXT\n${context}`,
-  });
-  return r.output_text.trim();
-}
+  // Pass 2: retrieval and credibility, now that we know the objective.
+  const { result: enriched, ms: retrievalMs } = await timed(
+    "retrieval",
+    () => enrichContext(deps.store, ctx, strategy, { voiceSetter: deps.voiceSetter }),
+    {
+      count: 0,
+    },
+  );
+  timings.retrieval = retrievalMs;
 
-async function reviewReply(context: string, strategy: Strategy, draft: string) {
-  const r = await openai.responses.create({
-    model: reviewModel,
-    instructions: SYSTEM_PROMPT,
-    input: `Audit the proposed reply. Check: already asked/answered; context contradiction; pitching too early; too passive; service confusion unresolved; value not built; credibility invented; unnatural/corporate tone; premature Avo CTA. If any issue exists, rewrite it.\n\nSTRATEGY\n${JSON.stringify(strategy,null,2)}\n\nDRAFT\n${draft}\n\nCONTEXT\n${context}`,
-    text: { format: { type: "json_schema", name: "setter_review", strict: true, schema: reviewSchema } },
-  });
-  return JSON.parse(r.output_text);
-}
+  const context = compactContext(enriched);
 
-export async function runSetter(handle: string, prospectMessage: string): Promise<AgentResult> {
-  const ctx = await loadLeadContext(handle, prospectMessage);
-  const context = compactContext(ctx);
-  const strategy = await getStrategy(context);
+  const { result: draft, ms: writeMs } = await timed("write", () => deps.llm.reply(enriched, context, strategy));
+  timings.write = writeMs;
 
-  // deterministic hard-gate protection in addition to model judgment
-  const q = strategy.qualification;
-  const hardGate = q.fit > 0 && q.commercial_goal > 0 && q.service_understanding > 0 && strategy.total_score >= 9 && !strategy.service_confusion;
-  strategy.call_ready = strategy.call_ready && hardGate;
+  const auditInput = { dialogue: ctx.dialogue, motivation: ctx.motivation, plan };
+  const draftAudit = auditDraft(draft, auditInput);
 
-  const draft = await writeReply(context, strategy);
-  const reviewer = await reviewReply(context, strategy, draft);
+  const { result: reviewer, ms: reviewMs } = await timed("review", () =>
+    deps.llm.review(enriched, context, strategy, draft, auditForReviewer(draftAudit)),
+  );
+  timings.review = reviewMs;
+
   const finalReply = reviewer.final_reply?.trim() || draft;
 
-  await db.from("ai_suggestions").insert({
-    lead_id: ctx.lead.id,
-    suggested_message: finalReply,
-    strategy,
-    context_used: { recent_message_count: ctx.recentMessages.length },
-    examples_used: [...ctx.similarWinners, ...ctx.similarLosses].map((x:any)=>x.id),
-  });
+  // The same checks run again on what the reviewer produced: a rewrite must not
+  // reintroduce what the draft was rejected for.
+  const finalAudit = auditDraft(finalReply, auditInput);
+  const review: typeof reviewer = {
+    ...reviewer,
+    final_reply: finalReply,
+    approved: reviewer.approved && finalAudit.ok,
+    issues: [...reviewer.issues, ...finalAudit.violations.filter((v) => v.severity === "hard").map((v) => v.detail)],
+    message_purpose: reviewer.message_purpose || plan.purpose,
+    desired_response: reviewer.desired_response || plan.desired_response,
+    next_if_positive: reviewer.next_if_positive || plan.next_if_positive,
+    next_if_negative: reviewer.next_if_negative || plan.next_if_negative,
+    next_if_no_reply: reviewer.next_if_no_reply || plan.next_if_no_reply,
+  };
 
-  return { strategy, reply: draft, reviewer: { ...reviewer, final_reply: finalReply } };
+  let suggestionId: string | null = null;
+  if (options.persist !== false) {
+    const saved = await deps.store.createSuggestion({
+      lead_id: ctx.lead.id,
+      suggested_message: finalReply,
+      strategy,
+      context_used: {
+        recent_message_count: ctx.recentMessages.length,
+        engine: deps.llm.engine,
+        gate,
+        understanding: {
+          level: enriched.understanding.level,
+          service_explained: Boolean(ctx.memory?.service_explained),
+          confusion: enriched.understanding.confusion?.reason ?? null,
+          commercial_clarity_needed: enriched.understanding.commercial_clarity_needed?.reason ?? null,
+        },
+        plan,
+        booking: { state: ctx.booking.state, no_show_risk: ctx.noShow.risk },
+        audit: finalAudit,
+        evidence_adjustments: strategy.evidence_adjustments ?? [],
+        temperature: ctx.temperature.temperature,
+        motivation: ctx.motivation.primary,
+        credibility_used: enriched.credibility.map((c) => c.name),
+        example_tiers: {
+          strong: enriched.examples.strong_winners.map((c) => c.outcome_tier),
+          partial: enriched.examples.partial_wins.map((c) => c.outcome_tier),
+          failure: enriched.examples.failures.map((c) => c.outcome_tier),
+        },
+        voice_setter: deps.voiceSetter,
+        timings,
+      },
+      examples_used: [
+        ...enriched.examples.strong_winners,
+        ...enriched.examples.partial_wins,
+        ...enriched.examples.failures,
+      ].map((x) => x.id),
+    });
+    suggestionId = saved.id;
+  }
+
+  return {
+    suggestion_id: suggestionId,
+    strategy,
+    reply: draft,
+    reviewer: review,
+    gate,
+    examples: enriched.examples,
+    credibility_used: enriched.credibility,
+    understanding: {
+      level: enriched.understanding.level,
+      service_explained: Boolean(ctx.memory?.service_explained),
+      evidence: enriched.understanding.evidence,
+      confusion_reason: enriched.understanding.confusion?.reason ?? null,
+      commercial_clarity_needed: enriched.understanding.commercial_clarity_needed?.reason ?? null,
+    },
+    plan: {
+      move: plan.move,
+      purpose: review.message_purpose ?? plan.purpose,
+      desired_response: review.desired_response ?? plan.desired_response,
+      next_if_positive: review.next_if_positive ?? plan.next_if_positive,
+      next_if_negative: review.next_if_negative ?? plan.next_if_negative,
+      next_if_no_reply: review.next_if_no_reply ?? plan.next_if_no_reply,
+    },
+    audit: {
+      ok: finalAudit.ok,
+      violations: finalAudit.violations,
+      words: finalAudit.words,
+    },
+    booking: {
+      state: ctx.booking.state,
+      next_action: ctx.booking.next_action,
+      no_show_risk: ctx.noShow.risk,
+      no_show_factors: ctx.noShow.factors,
+      no_show_mitigation: ctx.noShow.mitigation,
+    },
+    read: {
+      temperature: ctx.temperature.temperature,
+      motivation: ctx.motivation.primary,
+      already_answered: ctx.dialogue.do_not_ask,
+      brush_off: ctx.brushOff.kind === "none" ? null : ctx.brushOff.kind,
+    },
+    engine: deps.llm.engine,
+    timings,
+  };
+}
+
+export async function runSetterForLead(
+  leadId: string,
+  prospectMessage: string,
+  deps: AgentDeps = defaultDeps(),
+): Promise<AgentResult> {
+  const ctx = await loadLeadContext(deps.store, leadId, prospectMessage);
+  return runSetterForContext(ctx, deps);
+}
+
+/** Handle-based entry point, kept for the CLI. */
+export async function runSetter(
+  handle: string,
+  prospectMessage: string,
+  deps: AgentDeps = defaultDeps(),
+): Promise<AgentResult> {
+  const lead = await deps.store.getLeadByHandle(handle);
+  if (!lead) throw new Error(`Lead not found: ${handle}`);
+  return runSetterForLead(lead.id, prospectMessage, deps);
+}
+
+/**
+ * Advances permanent memory after a message was actually sent.
+ *
+ * Called from the feedback route, because "the setter sent this" is the moment
+ * an exchange becomes real.
+ */
+export async function recordExchange(
+  store: Store,
+  leadId: string,
+  strategy: Strategy,
+  sentMessage: string,
+  llm?: SetterLlm,
+): Promise<void> {
+  const [memory, messages] = await Promise.all([store.getMemory(leadId), store.listMessages(leadId)]);
+  const patch = applyExchangeToMemory(memory, leadId, {
+    strategy,
+    sentMessage,
+    prospectMessages: messages.filter((m) => m.sender === "prospect"),
+  });
+  await store.upsertMemory(leadId, patch);
+
+  // The richer, model-driven pass runs second and on the updated memory, so it
+  // can never overwrite what the deterministic pass just established — or any
+  // field a human has corrected.
+  const extractor = llm ?? defaultDeps().llm;
+  if (!extractor.extractMemory) return;
+
+  try {
+    const extraction = await timed("memory", () => extractor.extractMemory!(transcriptFor(messages)));
+    const current = await store.getMemory(leadId);
+    const { patch: extracted } = memoryPatchFromExtraction(current, leadId, extraction.result, messages);
+    await store.upsertMemory(leadId, extracted);
+  } catch (error) {
+    // Memory extraction is an enhancement, not a precondition: a failure here
+    // must never lose the exchange that has already been recorded.
+    console.error("memory extraction failed", error);
+  }
 }
