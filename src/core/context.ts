@@ -185,6 +185,19 @@ export async function enrichContext(
       examples: coachingExamples,
       liveMessages,
       stage: strategy.stage,
+      // Coaching is ranked against what this message is actually doing. Advice
+      // about building value before a call is wrong in the message that books
+      // one, and dumping everything in buries whatever was relevant.
+      situation: {
+        move: ctx.plan?.move ?? null,
+        stage: strategy.stage,
+        temperature: ctx.temperature.temperature,
+        brush_off: ctx.brushOff.kind,
+        motivation: ctx.motivation.primary,
+        avoid_money_framing: ctx.motivation.avoid_money_framing,
+        booking_state: ctx.booking.state,
+        service_confusion: ctx.understanding.confusion !== null,
+      },
     }),
   };
 }
@@ -401,10 +414,13 @@ export function compactContext(ctx: LeadContext): string {
       how_cassey_wants_this_written: ctx.coaching
         ? {
             rules_from_cassey: ctx.coaching.rules,
-            approved_examples: ctx.coaching.examples,
+            coaching_for_this_situation: ctx.coaching.examples,
+            selected_from: ctx.coaching.considered,
             messages_cassey_actually_sent: ctx.coaching.live_messages,
             precedence: ctx.coaching.precedence,
             note: ctx.coaching.note,
+            examples_note:
+              "These were chosen because they match this situation — the move, the temperature, the state of the conversation. Where an example carries `avoid` and `because`, that draft was rejected for that reason: do not reproduce it.",
           }
         : null,
       voice_examples: ctx.examples.voice_examples.map((c) => ({ setter: c.setter_name, content: c.content })),

@@ -449,17 +449,59 @@ export type SetterPreference = {
   created_at: string;
 };
 
-/** A situation-and-reply pair the operator has stood behind. */
+/** What kind of coaching material an example carries. */
+export const COACHING_EXAMPLE_KINDS = [
+  "good_example",
+  "bad_example",
+  "correction_pair",
+  "correction_chain",
+] as const;
+export type CoachingExampleKind = (typeof COACHING_EXAMPLE_KINDS)[number];
+
+/** One draft in a correction chain, with the criticism that followed it. */
+export type CoachingRevision = { reply: string; feedback: string | null; tags: string[] };
+
+/**
+ * When a piece of coaching applies.
+ *
+ * An edit is rarely a universal law: "build more value, no call yet" is advice
+ * about one move at one stage, and applying it to a booking message would be
+ * exactly wrong. Conditions keep an example attached to the situation it came
+ * from so retrieval can rank it rather than dumping everything into the prompt.
+ */
+export type CoachingCondition = {
+  moves?: string[];
+  stages?: string[];
+  temperatures?: string[];
+  booking_states?: string[];
+  brush_offs?: string[];
+  motivations?: string[];
+};
+
+/**
+ * A piece of coaching: a reply the operator stood behind, a draft they rejected,
+ * or the whole chain of corrections between the two.
+ */
 export type CoachingExample = {
   id: string;
   setter_name: string;
+  kind: CoachingExampleKind;
   situation: string;
   prospect_message: string | null;
-  approved_reply: string;
+  /** The draft that was rejected, when this came from a correction. */
+  rejected_reply: string | null;
+  /** The operator's criticism, in their own words. */
+  operator_feedback: string | null;
+  /** The reply to follow. Null until a person has approved one. */
+  approved_reply: string | null;
+  /** Every draft in the chain, oldest first, with what was said about it. */
+  revisions: CoachingRevision[];
   why: string | null;
   source: CoachingSource;
   status: CoachingStatus;
   tags: string[];
+  /** The situation this applies to. Null means it was never scoped. */
+  applies_when: CoachingCondition | null;
   approved_at: string | null;
   created_at: string;
 };
