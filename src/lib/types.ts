@@ -71,6 +71,8 @@ export type Lead = {
   niche: string | null;
   followers: number | null;
   location: string | null;
+  /** Only ever a timezone we were told. Never inferred from location. */
+  timezone?: string | null;
   lead_status: string | null;
   interest_level: string | null;
   conversation_stage: string | null;
@@ -337,12 +339,15 @@ export type AgentResult = {
     violations: { rule: string; detail: string; severity: "hard" | "soft" }[];
     words: number;
   };
-  /** How far into booking this is, and whether the call would be honoured. */
+  /** How far into booking this is, plus the advisory no-show read. */
   booking: {
     state: string;
     next_action: string;
+    /** Concrete times this message should offer, when it is the booking move. */
+    slots: string[];
     no_show_risk: string;
     no_show_factors: string[];
+    /** How to adapt the booking. Never a reason to withhold one. */
     no_show_mitigation: string;
   };
   /** How the prospect is engaging, and what they have already told us. */

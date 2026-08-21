@@ -1,4 +1,11 @@
-import type { BookingAssessment, NoShowAssessment } from "@/core/booking";
+import {
+  proposeSlots,
+  type BookingAssessment,
+  type BookingState,
+  type CallSlot,
+  type NoShowAssessment,
+  type SlotProposal,
+} from "@/core/booking";
 import { TOPIC_LABELS, nextBestTopic, type DialogueState, type Topic } from "@/core/dialogue-state";
 import { countQuestions } from "@/core/style";
 import type { BrushOffAssessment } from "@/core/brush-off";
@@ -45,6 +52,21 @@ export type MessagePlan = {
   forbidden: { move: Move; why: string }[];
   /** The single topic to ask about, when the move is a question. */
   ask_topic: Topic | null;
+  /**
+   * Concrete times to put in this message. Only populated when the move is to
+   * book: proposing the call and offering the times is one move, not two.
+   */
+  slots: CallSlot[];
+  /** How to talk about time given what we know of their timezone. */
+  timezone_note: string | null;
+  /**
+   * How to adapt the booking for no-show risk. Advice about framing, commitment
+   * and logistics — never about whether a qualified prospect may be offered a
+   * call.
+   */
+  risk_adaptation: string | null;
+  /** How far into booking the conversation already is. */
+  booking_state: BookingState;
 };
 
 const CALL_FORBIDDEN = {
@@ -70,12 +92,18 @@ export function planMessage(input: {
   noShow: NoShowAssessment;
   /** Research facts a person has verified, usable in a cold opener. */
   verifiedResearch?: { value: string }[];
+  /** Concrete times to offer once the gate is open. */
+  slotProposal?: SlotProposal;
 }): MessagePlan {
   const { dialogue, understanding, brushOff, temperature, gate, clarificationSpent, booking, noShow } = input;
 
   const base = {
     forbidden: [] as { move: Move; why: string }[],
     ask_topic: null as Topic | null,
+    slots: [] as CallSlot[],
+    timezone_note: null as string | null,
+    risk_adaptation: null as string | null,
+    booking_state: booking.state,
   };
 
   // Nothing has been said back yet: this is an opener, not a conversation.
@@ -193,6 +221,7 @@ export function planMessage(input: {
           : "Move straight to the next missing detail — do not re-sell.",
       next_if_negative: "Offer one alternative. If that fails, agree to revisit rather than chase.",
       next_if_no_reply: "One short nudge restating the specific time, then leave it.",
+      risk_adaptation: noShow.risk === "low" ? null : `No-show risk is ${noShow.risk}: ${noShow.guidance.logistics} ${noShow.guidance.followup}`,
       forbidden: [
         { move: "build_value", why: "The value is accepted — more of it now reads as doubt." },
         { move: "ask_discovery", why: "Discovery after a slot is agreed only reopens the decision." },
@@ -201,26 +230,28 @@ export function planMessage(input: {
   }
 
   if (gate.passed) {
-    if (noShow.risk === "high") {
-      return {
-        ...base,
-        move: "build_value",
-        purpose: `The gate is open but this booking would probably not be honoured: ${noShow.factors[0]}`,
-        desired_response: "Something concrete about their own goal, in their own words.",
-        next_if_positive: "Now propose the call.",
-        next_if_negative: "Find out what is actually missing before booking anything.",
-        next_if_no_reply: "Leave it. A call booked into this would no-show.",
-        forbidden: [{ move: "offer_call", why: noShow.mitigation }],
-      };
-    }
+    // Qualification is the only gate. No-show risk changes HOW the call is
+    // offered — the framing, the commitment asked for, the logistics — and never
+    // whether a qualified prospect is allowed to be offered one.
+    const proposal = input.slotProposal ?? proposeSlots();
     return {
       ...base,
       move: "offer_call",
-      purpose: "Every dimension is established. Propose the call concretely.",
-      desired_response: "A yes with a rough time, or a specific objection we can handle.",
-      next_if_positive: "Offer two concrete slots and get the email.",
+      purpose:
+        "Every dimension is established. Contextualise the call in one line, propose it with Avo, and offer two concrete times in this same message.",
+      desired_response: "One of the two times, or a specific objection we can handle.",
+      next_if_positive: "Take the time they picked and ask for the email to send the invite to. Nothing else.",
       next_if_negative: "Handle the objection; do not re-pitch the value they already accepted.",
-      next_if_no_reply: "One short nudge that restates the value for their goal, then leave it.",
+      next_if_no_reply: "One short nudge that restates the two times, then leave it.",
+      slots: proposal.slots,
+      timezone_note: proposal.timezone_note,
+      risk_adaptation:
+        noShow.risk === "low"
+          ? null
+          : `No-show risk is ${noShow.risk}: ${noShow.guidance.frame_purpose} ${noShow.guidance.logistics} ${noShow.guidance.commitment}`,
+      forbidden: [
+        { move: "ask_discovery", why: "Qualification is met. Another question here delays a call they are ready for." },
+      ],
     };
   }
 
@@ -302,6 +333,23 @@ export type MoveAudit = {
   violations: string[];
 };
 
+const DAY_NAME = /\b(mon|tues?|wed(nes)?|thur?s?|fri|sat(ur)?|sun)(day)?\b/gi;
+const CLOCK_TIME = /\b\d{1,2}([:.]\d{2})?\s?(am|pm)?\s?[–-]\s?\d{1,2}([:.]\d{2})?\s?(am|pm)?\b|\b\d{1,2}([:.]\d{2})\b|\b\d{1,2}\s?(am|pm)\b/gi;
+
+/**
+ * Counts how many genuinely concrete time options a draft puts on the table.
+ *
+ * "this week or next" is not an option, it is a diary invitation: the prospect
+ * has to do the work of proposing something, and that is the turn that gets
+ * lost. Distinct named days and distinct clock times both count.
+ */
+export function countConcreteTimeOptions(draft: string): number {
+  const days = new Set((draft.match(DAY_NAME) ?? []).map((d) => d.toLowerCase().slice(0, 3)));
+  if (days.size >= 2) return days.size;
+  const times = new Set((draft.match(CLOCK_TIME) ?? []).map((t) => t.toLowerCase().replace(/\s+/g, "")));
+  return Math.max(days.size, times.size >= 2 ? times.size : days.size + (times.size > 0 ? 1 : 0));
+}
+
 /**
  * Checks the draft makes exactly one move.
  *
@@ -325,6 +373,21 @@ export function auditMoves(draft: string, plan: MessagePlan): MoveAudit {
   }
   if (plan.move === "cold_opener" && /\b(i (researched|looked (you|into))|been following you|read all about)\b/i.test(draft)) {
     violations.push("Sounds like we researched them. Mention what we noticed, not the researching.");
+  }
+  if (plan.move === "offer_call" && plan.slots.length >= 2 && countConcreteTimeOptions(draft) < 2) {
+    violations.push(
+      `Proposes the call without two concrete times. Offer them in this message (${plan.slots
+        .map((s) => s.label)
+        .join(" / ")}) instead of asking what suits — the extra turn is where bookings are lost.`,
+    );
+  }
+  // A call already agreed must not be proposed a second time: it reads as though
+  // we were not listening, and reopens a decision they have already made.
+  const AGREED: BookingState[] = ["slot_selected", "email_needed", "invite_pending", "booked"];
+  if (plan.move === "arrange_logistics" && AGREED.includes(plan.booking_state) && has_cta) {
+    violations.push(
+      `A time is already agreed (${plan.booking_state.replace(/_/g, " ")}). Proposing the call again reopens a settled decision — ask only for what is still missing.`,
+    );
   }
   if (plan.move === "respect_rejection" && questions > 0) {
     violations.push("They have declined. A question here is persistence, not curiosity.");

@@ -1,4 +1,12 @@
-import { assessBooking, assessNoShowRisk, type BookingAssessment, type NoShowAssessment } from "@/core/booking";
+import {
+  assessBooking,
+  assessNoShowRisk,
+  detectStatedTimezone,
+  proposeSlots,
+  type BookingAssessment,
+  type NoShowAssessment,
+  type SlotProposal,
+} from "@/core/booking";
 import { classifyBrushOff, clarificationAlreadyUsed, type BrushOffAssessment } from "@/core/brush-off";
 import { buildCoachingLayer, type CoachingLayer } from "@/core/coaching";
 import { rankCredibility } from "@/core/credibility";
@@ -49,8 +57,10 @@ export type LeadContext = {
   evidence: QualificationEvidence;
   /** How far into booking this conversation actually is. */
   booking: BookingAssessment;
-  /** Whether a call booked now would be honoured. */
+  /** Advisory risk that a call booked now is not honoured. Never a gate. */
   noShow: NoShowAssessment;
+  /** Two concrete times to offer, and how to talk about timezone. */
+  slotProposal: SlotProposal;
   events: ConversationEvent[];
   credibility: CredibilityAsset[];
   examples: RetrievedExamples;
@@ -130,6 +140,7 @@ export async function loadLeadContext(store: Store, leadId: string, newMessage: 
       dialogue,
       booking,
     }),
+    slotProposal: proposeSlots({ timezone: lead.timezone ?? detectStatedTimezone(withPending) }),
     events,
     credibility: [],
     examples: { strong_winners: [], partial_wins: [], failures: [], voice_examples: [] },
@@ -338,7 +349,9 @@ export function compactContext(ctx: LeadContext): string {
       no_show_risk: {
         risk: ctx.noShow.risk,
         factors: ctx.noShow.factors,
+        adapt_the_booking: ctx.noShow.guidance,
         mitigation: ctx.noShow.mitigation,
+        note: "Advisory only. Qualification decides whether a call may be offered; this decides how it is offered — how explicitly the purpose is framed, which times to pick, how much commitment to ask for. Never withhold a call from a qualified prospect because of this risk.",
       },
       qualification_evidence_note:
         "Score each dimension from this evidence. If you score above what the evidence supports, you must supply the exact quote that justifies it in `evidence`; unverifiable quotes are discarded and the score is capped.",
@@ -352,6 +365,13 @@ export function compactContext(ctx: LeadContext): string {
             next_if_no_reply: ctx.plan.next_if_no_reply,
             forbidden_moves: ctx.plan.forbidden,
             ask_about: ctx.plan.ask_topic,
+            offer_these_times: ctx.plan.slots.map((s) => s.label),
+            timezone: ctx.plan.timezone_note,
+            adapt_for_risk: ctx.plan.risk_adaptation,
+            slots_note:
+              ctx.plan.slots.length > 0
+                ? "Propose the call and these two times in the SAME message. That is one move, not two. Do not ask what day suits — offering the times is what removes the extra turn. Adapt the wording naturally; do not read them out as a list."
+                : null,
             note: "Make exactly this move. One move per message.",
           }
         : null,

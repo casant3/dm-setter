@@ -100,6 +100,7 @@ export async function runSetterForContext(
     booking: ctx.booking,
     noShow: ctx.noShow,
     verifiedResearch: (ctx.memory?.research_facts ?? []).filter((f) => f.verified),
+    slotProposal: ctx.slotProposal,
   });
   ctx.plan = plan;
 
@@ -160,7 +161,7 @@ export async function runSetterForContext(
           commercial_clarity_needed: enriched.understanding.commercial_clarity_needed?.reason ?? null,
         },
         plan,
-        booking: { state: ctx.booking.state, no_show_risk: ctx.noShow.risk },
+        booking: { state: ctx.booking.state, no_show_risk: ctx.noShow.risk, slots_offered: plan.slots.map((s) => s.label) },
         audit: finalAudit,
         evidence_adjustments: strategy.evidence_adjustments ?? [],
         temperature: ctx.temperature.temperature,
@@ -214,6 +215,7 @@ export async function runSetterForContext(
     booking: {
       state: ctx.booking.state,
       next_action: ctx.booking.next_action,
+      slots: plan.slots.map((s) => s.label),
       no_show_risk: ctx.noShow.risk,
       no_show_factors: ctx.noShow.factors,
       no_show_mitigation: ctx.noShow.mitigation,
