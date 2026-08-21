@@ -84,7 +84,7 @@ ${context}`,
     return JSON.parse(r.output_text) as Review;
   },
 
-  async extractMemory(transcript) {
+  async extractMemory(transcript, alreadyKnown) {
     const model = reviewModel();
     const started = Date.now();
     const r = (await getOpenAI().responses.create({
@@ -92,7 +92,10 @@ ${context}`,
       instructions: SYSTEM_PROMPT,
       input: `${EXTRACTION_INSTRUCTIONS}
 
-CONVERSATION
+ALREADY REMEMBERED — do not propose any of this again
+${alreadyKnown ?? "Nothing yet."}
+
+NEW MESSAGES TO EXTRACT FROM
 ${transcript}`,
       text: {
         format: { type: "json_schema", name: "memory_extraction", strict: true, schema: memoryExtractionSchema },

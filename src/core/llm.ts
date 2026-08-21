@@ -12,6 +12,9 @@ export interface SetterLlm {
   /**
    * Optional fourth pass: durable memory extraction after an exchange really
    * happened. Absent on the offline stand-in, which has no judgement to add.
+   *
+   * `transcript` is only the new part of the conversation; `alreadyKnown` is
+   * what is already remembered, so the same facts are not re-derived every time.
    */
-  extractMemory?(transcript: string): Promise<ExtractedMemory>;
+  extractMemory?(transcript: string, alreadyKnown?: string): Promise<ExtractedMemory>;
 }

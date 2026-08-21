@@ -108,8 +108,26 @@ export const memoryExtractionSchema = {
   type: "object",
   additionalProperties: false,
   properties: {
-    relationship_summary: { type: ["string", "null"] },
-    communication_style: { type: ["string", "null"] },
+    // Interpretations, so they carry the words they were read from. Stored as
+    // inferences whatever the model says about them.
+    relationship_summary: {
+      type: ["object", "null"],
+      additionalProperties: false,
+      properties: {
+        value: { type: "string", description: "Your reading of the relationship." },
+        quote: { type: "string", description: "The words that best support it, verbatim, or an empty string." },
+      },
+      required: ["value", "quote"],
+    },
+    communication_style: {
+      type: ["object", "null"],
+      additionalProperties: false,
+      properties: {
+        value: { type: "string", description: "How they write." },
+        quote: { type: "string", description: "The words that best show it, verbatim, or an empty string." },
+      },
+      required: ["value", "quote"],
+    },
     businesses: extractedItems,
     goals: extractedItems,
     personal_goals: extractedItems,

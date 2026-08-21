@@ -138,9 +138,27 @@ export type MemoryItem = {
   verified?: boolean;
 };
 
+/**
+ * State of the incremental extraction pass, so the same history is not sent to
+ * the model again on every exchange.
+ */
+export type ExtractionState = {
+  /** The last message that has already been considered. */
+  last_message_id: string | null;
+  last_message_at: string | null;
+  /** How many messages have been through extraction in total. */
+  messages_considered: number;
+  last_run_at: string | null;
+};
+
 export type LeadMemory = {
   lead_id: string;
-  relationship_summary: string | null;
+  /**
+   * The model's reading of the relationship. An interpretation, never a fact:
+   * stored with provenance like every other remembered item so it cannot appear
+   * in context as something the prospect said.
+   */
+  relationship_summary: MemoryItem | null;
   facts_known: MemoryItem[];
   /** What we found out about them, which they have not told us themselves. */
   research_facts: MemoryItem[];
@@ -159,8 +177,11 @@ export type LeadMemory = {
   timing_constraints: MemoryItem[];
   followup_commitments: MemoryItem[];
   key_entities: MemoryItem[];
-  communication_style: string | null;
+  /** Also an interpretation — how they write, as read by the model. */
+  communication_style: MemoryItem | null;
   current_strategy: string | null;
+  /** Where incremental memory extraction got to. */
+  extraction_state?: ExtractionState | null;
 
   /** An action we took: we sent an explanation of the business model. */
   service_explained: boolean | null;

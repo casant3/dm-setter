@@ -15,7 +15,7 @@ import type { MessagePlan } from "@/core/message-plan";
 import { assessMotivation, FRAME_GUIDANCE, type MotivationAssessment } from "@/core/motivation";
 import { assessQualificationEvidence, type QualificationEvidence } from "@/core/qualification-evidence";
 import { assessTemperature, type TemperatureAssessment } from "@/core/temperature";
-import { recomputeUnderstanding } from "@/core/memory";
+import { narrativeItem, recomputeUnderstanding } from "@/core/memory";
 import { CASSEY, buildQueryText, rerankAndBucket } from "@/core/retrieval";
 import type { Store } from "@/lib/store/store";
 import type {
@@ -214,6 +214,30 @@ function itemValues(items: MemoryItem[] | undefined, limit = 12): string[] {
   });
 }
 
+/**
+ * Renders a narrative field as what it is.
+ *
+ * "Prospect trusts Cassey" is the model's reading of a conversation, and handing
+ * it back as a bare string invites the next pass to treat it as something the
+ * prospect said. It goes in labelled, with its provenance, unless a person has
+ * confirmed it.
+ */
+function narrativeFor(value: unknown) {
+  const item = narrativeItem(value);
+  if (!item) return null;
+  return {
+    value: item.value,
+    provenance: item.provenance,
+    confidence: item.confidence,
+    verified: Boolean(item.verified),
+    supported_by: item.quote ?? null,
+    source_message_id: item.source_message_id ?? null,
+    note: item.verified
+      ? "Confirmed by Cassey. Treat it as accurate."
+      : "This is an interpretation, not something they said. Do not repeat it back to them as fact, and do not use it as qualification evidence.",
+  };
+}
+
 function summariseChunk(c: { outcome: string | null; outcome_tier: string | null; stage: string | null; niche: string | null; content: string; setter_name: string | null; match_reasons?: string[]; metadata: Record<string, unknown> | null }) {
   return {
     outcome: c.outcome,
@@ -271,7 +295,7 @@ export function compactContext(ctx: LeadContext): string {
       },
       long_term_memory: m
         ? {
-            relationship_summary: m.relationship_summary,
+            relationship_summary: narrativeFor(m.relationship_summary),
             businesses: itemValues(m.businesses),
             commercial_goals: itemValues(m.goals),
             personal_goals: itemValues(m.personal_goals),
@@ -294,7 +318,7 @@ export function compactContext(ctx: LeadContext): string {
             key_entities: itemValues(m.key_entities),
             timing_constraints: itemValues(m.timing_constraints),
             followup_commitments: itemValues(m.followup_commitments),
-            communication_style: m.communication_style,
+            communication_style: narrativeFor(m.communication_style),
             current_strategy: m.current_strategy,
           }
         : null,
