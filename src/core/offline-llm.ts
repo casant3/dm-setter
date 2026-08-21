@@ -172,8 +172,8 @@ function buildReply(ctx: LeadContext, strategy: Strategy): string {
         slots.length >= 2
           ? `I've got ${slots[0].label} or ${slots[1].label} — either work?`
           : `When suits you this week?`;
-      const anchor = goal ? ` so he can look at ${lower(goal)} properly` : "";
-      return `Makes sense. Best next step is probably a quick chat with Avo${anchor} and walk you through how we'd approach it. ${times}`;
+      const anchor = goal ? `look at ${lower(goal)} properly and ` : "";
+      return `Makes sense. Best next step is probably a quick chat with Avo — he can ${anchor}walk you through how we'd approach it. ${times}`;
     }
     case "clarify_after_brushoff":
       return `No worries — probably worth saying I'm not pitching a guest spot. We build out media and search presence for people so there's third-party proof behind their name. Leave it with you either way.`;

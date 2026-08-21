@@ -19,6 +19,9 @@ A permanent-memory Instagram DM appointment-setting agent powered by OpenAI, wit
 - Distinguishes a wrong premise about the service from a straightforward question about price.
 - Reads brush-offs, timing objections and real rejections differently, and stops when it should.
 - Carries the operator's own rules, which outrank everything the agent has learned.
+- Books in one move: once the gate opens it proposes the call *and* two concrete times, rather than spending a turn asking whether a call would be welcome.
+- Treats no-show risk as advice on how to book, never as a second gate.
+- Learns from whole correction chains — the draft, what the operator objected to, and what they approved instead — with nothing applied until a person approves it.
 
 ## Architecture
 
@@ -32,7 +35,7 @@ AI copilot    ─┘                     │              │
 
 The three model passes are unchanged from V1 — strategist, writer, reviewer — but they are now surrounded by deterministic reading and enforcement: the conversation is analysed in code before the model sees it, and every draft is audited in code before and after the reviewer. What is new is that the persistence layer and the model layer are now interfaces, so the same core drives the CLI, the web app, and the tests.
 
-- `src/core/` — the agent. `prompts.ts` and `schemas.ts` are byte-identical to V1.
+- `src/core/` — the agent. The three passes are V1's, but `prompts.ts` and `schemas.ts` have both grown since: the prompt carries the gate, the explained/understood split, one-move planning and the booking rules, and `schemas.ts` adds the memory-extraction schema.
 - `src/lib/store/` — `Store` interface, Supabase implementation, local dev implementation.
 - `src/app/` — Next.js App Router pages and API routes.
 - `src/components/` — the three-column UI.
@@ -44,6 +47,10 @@ unless **all six** qualification dimensions are above zero, the total is at leas
 9/12, and there is no unresolved SERVICE_CONFUSION. A high total never
 compensates for a missing dimension. When the model wants to book and the gate
 disagrees, the gate wins and the copilot says so.
+
+No-show risk sits alongside the gate but is **advisory**: it changes how firmly
+the purpose is framed, which times are offered and how much commitment is asked
+for. It never withholds a call from a prospect the gate has passed.
 
 See [`docs/AGENT_BRAIN.md`](docs/AGENT_BRAIN.md) for the full design.
 
@@ -66,7 +73,9 @@ See [`docs/AGENT_BRAIN.md`](docs/AGENT_BRAIN.md) for the full design.
 
 **Feedback** — every suggestion is stored. *Use as-is*, *Send edited* and *Reject* record which happened; accepting appends the message that was actually sent to the thread, so the store learns the gap between what the agent proposed and what a human sent.
 
-**Memory advances on send** — accepting a suggestion updates `lead_memories`: the questions the DM just asked are recorded so they are never asked twice, explaining the service is logged, the Avo CTA is logged once the gate opens, and `service_understanding` ratchets up as the model gets explained. Fresh SERVICE_CONFUSION resets that score to zero, which re-closes the call gate — so a prospect who reveals late that they thought this was a guest spot cannot stay call-ready.
+**Memory advances on send** — accepting a suggestion updates `lead_memories` in two passes. The deterministic pass records the questions the DM just asked so they are never asked twice, logs that the service was explained, logs the Avo CTA once the gate opens, and re-derives `service_understanding` from the prospect's own words. Fresh SERVICE_CONFUSION resets that score to zero, which re-closes the call gate — so a prospect who reveals late that they thought this was a guest spot cannot stay call-ready.
+
+The model pass then extracts what patterns cannot: what they are building, who they named, what is in their way. It runs **incrementally** — only the messages since the last run, plus a short window of context and a list of what is already remembered — and does not run at all when nothing new has been said. Every item must carry the words it came from; a quote found verbatim in the thread is a fact, a quote that cannot be found is kept as a low-confidence inference. `relationship_summary` and `communication_style` are always inferences, never facts, because they are readings of a conversation rather than anything the prospect said — they reach the model labelled as such, and a human correction replaces them permanently.
 
 **Adding leads and importing DMs** — new leads need only a handle. Existing threads can be pasted in: the parser handles `Me:` / `Them:` style, `@handle:` labels, leading timestamps, and Instagram's export format where the sender sits on its own line. Unrecognised speaker labels are surfaced in a preview so they can be mapped before anything is written.
 
@@ -74,8 +83,9 @@ See [`docs/AGENT_BRAIN.md`](docs/AGENT_BRAIN.md) for the full design.
 
 1. Create/use a Supabase project.
 2. Run `supabase/schema.sql`, then `supabase/migrations/002_web_app.sql`, then
-   `supabase/migrations/003_agent_brain.sql`, `supabase/migrations/004_coaching.sql`
-   and `supabase/migrations/005_research.sql`, in a development database.
+   `supabase/migrations/003_agent_brain.sql`, `supabase/migrations/004_coaching.sql`,
+   `supabase/migrations/005_research.sql`, `supabase/migrations/006_coaching_chains.sql`
+   and `supabase/migrations/007_memory_narrative.sql`, in a development database.
 3. Copy `.env.example` to `.env` and add server-side credentials.
 4. `npm install`
 5. `npm run seed` — seeds the playbook rules.
@@ -173,8 +183,10 @@ fixtures are synthetic.
 ## Deeper documentation
 
 - [`docs/AGENT_BRAIN.md`](docs/AGENT_BRAIN.md) — the gate, the
-  explained/understood split, memory provenance, outcome tiers, retrieval and
-  voice separation.
+  explained/understood split, the dialogue ledger, motivation, brush-offs, the
+  one-move planner, the deterministic audit, booking state, advisory no-show
+  risk, memory provenance and incremental extraction, outcome tiers, retrieval,
+  voice separation and the coaching layer.
 - [`docs/INGESTION.md`](docs/INGESTION.md) — the four-stage screenshot pipeline
   and the transcript verification workflow.
 
@@ -189,6 +201,8 @@ fixtures are synthetic.
 - Transcription and human verification of the 360-screenshot corpus. Stages 1 and
   2 have been run against the real dataset (67/67 cards, 360/360 screenshots);
   stages 3 and 4 need an API key and a human reviewer.
-- Richer narrative memory. Structured memory advances automatically after each
-  accepted exchange; `relationship_summary` and free-text fields are still
-  maintained by hand or corrected in the Memory panel.
+- Live GPT-5.6 behaviour. Every deterministic path is tested and the offline
+  engine exercises the whole pipeline, but no live model call has been made.
+- Coaching material. The layer is built and the importer works, but it starts
+  empty: rules, examples and imported correction chains all need a human to
+  approve them before they influence anything.

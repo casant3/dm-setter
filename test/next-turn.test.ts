@@ -6,9 +6,10 @@ import path from "node:path";
 import { test } from "node:test";
 import { runSetterForLead, type AgentDeps } from "@/core/agent";
 import { offlineLlm } from "@/core/offline-llm";
+import { countConcreteTimeOptions } from "@/core/message-plan";
 import { countQuestions, countWords } from "@/core/style";
 import { LocalStore } from "@/lib/store/local-store";
-import type { Sender } from "@/lib/types";
+import type { NewLeadInput, Sender } from "@/lib/types";
 
 /**
  * Next-turn regression suite.
@@ -24,6 +25,8 @@ type Case = {
   name: string;
   why: string;
   service_explained?: boolean;
+  /** Profile fields, where the case needs the lead to be a known person. */
+  lead?: Partial<NewLeadInput>;
   messages: [Sender, string][];
   expect: {
     move?: string;
@@ -37,6 +40,11 @@ type Case = {
     max_questions?: number;
     understanding_at_least?: number;
     avoid_money_framing?: boolean;
+    /** The message must put two concrete times on the table. */
+    offers_two_times?: boolean;
+    /** No new qualification question once everything is established. */
+    no_discovery_question?: boolean;
+    asks_for_email?: boolean;
   };
 };
 
@@ -55,7 +63,10 @@ const MONEY_FRAMING = /\b(revenue|monetis|monetiz|roi|profit|sales target|paying
 for (const testCase of fixture.cases) {
   test(`next turn: ${testCase.name}`, async () => {
     const deps = await freshDeps();
-    const lead = await deps.store.createLead({ instagram_handle: `fixture_${fixture.cases.indexOf(testCase)}` });
+    const lead = await deps.store.createLead({
+      instagram_handle: `fixture_${fixture.cases.indexOf(testCase)}`,
+      ...testCase.lead,
+    });
 
     await deps.store.appendMessages(
       lead.id,
@@ -102,6 +113,23 @@ for (const testCase of fixture.cases) {
     if (testCase.expect.understanding_at_least !== undefined) {
       assert.ok(result.understanding.level >= testCase.expect.understanding_at_least, context);
     }
+    if (testCase.expect.offers_two_times) {
+      assert.ok(result.booking.slots.length >= 2, `the plan should carry two times — ${context}`);
+      assert.ok(
+        countConcreteTimeOptions(reply) >= 2,
+        `the message should offer both of them rather than asking what suits — ${context}`,
+      );
+    }
+    if (testCase.expect.no_discovery_question) {
+      assert.notEqual(result.plan.move, "ask_discovery", context);
+      assert.ok(
+        !result.audit.violations.some((v) => v.rule === "already_answered"),
+        `re-asks something already answered — ${context}`,
+      );
+    }
+    if (testCase.expect.asks_for_email) {
+      assert.match(reply, /\bemail\b/i, `should ask for the email — ${context}`);
+    }
     if (testCase.expect.avoid_money_framing) {
       assert.doesNotMatch(reply, MONEY_FRAMING, `money framing at a mission-driven prospect — ${context}`);
     }
@@ -109,6 +137,6 @@ for (const testCase of fixture.cases) {
 }
 
 test("every fixture case is exercised", () => {
-  assert.ok(fixture.cases.length >= 12, "the regression suite should not shrink");
+  assert.ok(fixture.cases.length >= 15, "the regression suite should not shrink");
   assert.ok(fixture.cases.every((c) => c.why.trim().length > 0), "each case records why it exists");
 });
