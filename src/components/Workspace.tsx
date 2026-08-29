@@ -19,6 +19,8 @@ import { CopilotPanel } from "@/components/CopilotPanel";
 import { ImportDialog } from "@/components/ImportDialog";
 import { LeadsSidebar } from "@/components/LeadsSidebar";
 import { NewLeadDialog } from "@/components/NewLeadDialog";
+import { MobileWorkspace } from "@/components/MobileWorkspace";
+import { useIsMobile } from "@/components/useMediaQuery";
 
 export function Workspace() {
   const [status, setStatus] = useState<AppStatus | null>(null);
@@ -40,6 +42,7 @@ export function Workspace() {
   const [showCorpus, setShowCorpus] = useState(false);
   const [showCoaching, setShowCoaching] = useState(false);
   const [rightTab, setRightTab] = useState<"copilot" | "memory">("copilot");
+  const isMobile = useIsMobile();
 
   const refreshLeads = useCallback(async () => {
     // The whole inbox is fetched and filtered client-side: switching account
@@ -143,6 +146,36 @@ export function Workspace() {
     await fetch("/api/auth", { method: "DELETE" });
     window.location.href = "/login";
   };
+
+  // A phone gets a different application, not a squeezed one: the columns become
+  // screens, and the reply the operator has to copy is the main thing on screen.
+  if (isMobile) {
+    return (
+      <MobileWorkspace
+        status={status}
+        leads={leads}
+        accounts={accounts}
+        accountId={accountId}
+        onAccountChange={setAccountId}
+        selectedId={selectedId}
+        onSelect={setSelectedId}
+        detail={detail}
+        result={result}
+        generating={generating}
+        loadingLeads={loadingLeads}
+        genError={genError}
+        topError={topError}
+        onGenerate={(msg) => void generate(msg)}
+        onAddMessage={addMessage}
+        onFeedback={sendFeedback}
+        onUpdateLead={updateLead}
+        onCreateLead={createLead}
+        onCorrectMemory={correctMemory}
+        onSignOut={signOut}
+        accountFor={accountFor}
+      />
+    );
+  }
 
   return (
     <div className="app">
