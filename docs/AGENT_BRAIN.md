@@ -328,6 +328,30 @@ noticed publicly — never as something they said, never more than one, and neve
 in a way that sounds like research. No research fact counts as qualification
 evidence.
 
+## Outbound accounts
+
+`src/core/accounts.ts`, `src/core/funnel.ts`. Which page a conversation belongs
+to is part of the conversation's identity, not a label on it. Two threads with
+the same prospect from two accounts have separate messages, separate memory and
+separate qualification; nothing crosses between them, and the store's handle
+lookup takes an account precisely so that it cannot.
+
+Duplicate outreach is surfaced rather than prevented. The same account opening a
+second thread with someone is refused — that is one conversation, and it already
+exists — but a second *account* reaching the same prospect is a warning the
+operator acknowledges, because a personal page and a brand page both have
+reasons to, and only a person can tell which case this is.
+
+Historical conversations carry an explicit unknown account. The corpus does not
+record which page sent them, and a guess would put false attribution into the
+numbers the operator makes decisions from.
+
+The funnel is derived, never counted: each stage is recomputed from the recorded
+messages, the booking sequence and the outcome, so a stage cannot drift out of
+step with the conversation it describes. Segmenting it by account is the point —
+two pages sending the same volume with different reply rates is a fact about the
+pages, not about the setter.
+
 ## What the model cannot override
 
 Deterministic code owns:
@@ -346,6 +370,8 @@ Deterministic code owns:
 - credibility selection;
 - which transcripts are eligible for retrieval;
 - which coaching material is in force, and which of it is relevant here;
+- which outbound account a conversation belongs to, and that nothing —
+  messages, memory, retrieval — crosses between two accounts' threads;
 - that an imported draft nobody approved never becomes an approved example.
 
 The model proposes; these decide.

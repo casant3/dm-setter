@@ -54,6 +54,60 @@ for. It never withholds a call from a prospect the gate has passed.
 
 See [`docs/AGENT_BRAIN.md`](docs/AGENT_BRAIN.md) for the full design.
 
+## Outbound accounts
+
+Outreach runs from more than one Instagram page, so every conversation belongs to
+exactly one **outbound account**. Attribution only: no credentials are stored,
+nothing logs in to Instagram, and nothing is sent by this system.
+
+- A lead carries its account; messages inherit it through the lead.
+- The same prospect may exist under two accounts — those are two conversations,
+  with separate memory, and are never merged. The same account cannot open two
+  threads with the same person.
+- Adding a prospect already being contacted from another active page raises a
+  warning the operator must acknowledge. It is never silently blocked, because
+  there are legitimate reasons, and never silent, because two pages messaging
+  someone the same week reads as spam.
+- Historical Trello conversations are attributed to an explicit
+  **unknown/legacy** account rather than a guess. It is inactive, so it can never
+  be chosen for new outreach.
+- Analytics segment the whole funnel by account: DMs sent, conversations,
+  replies, positive replies, qualified, calls offered, calls booked, shows,
+  no-shows, onboardings, not interested, and the conversion rate between stages.
+- Coaching stays operator-level. The voice is Cassey's, not the page's.
+
+## On a phone
+
+The app is mobile-first, because the accounts are logged in on a phone and the
+real workflow is Instagram ↔ DM Setter:
+
+> copy their reply → paste it here → generate → **Copy reply** → send it in
+> Instagram → Sent as-is / Sent edited → next prospect
+
+Below 900px the three columns become three screens — inbox, conversation,
+details — rather than a narrower desktop:
+
+- The conversation screen is built around the exact DM, in a box that grows to
+  fit, under a full-width **Copy reply** button that copies the message and
+  nothing else.
+- **Add reply** opens a sheet focused and ready, with a Paste button where the
+  browser allows it, and saves-and-generates in one action. The clipboard is
+  never read except from that button.
+- Feedback is one tap, and an edit made before sending is preserved separately
+  from the suggestion so the coaching layer sees what changed.
+- *Sending from @account* appears on every conversation and inbox row, with
+  account tabs across the top of the inbox.
+- Triage filters — needs reply, follow-up due, warm, call ready — carry counts
+  for the selected account, and search matches a handle prefix first.
+- Qualification, memory, retrieval and the audit live under **Details**.
+
+Installable as a PWA (standalone display, maskable icons, safe-area viewport).
+Installing is optional and the ordinary HTTPS site behaves identically. The
+service worker caches build assets only — never an API response, never HTML —
+so no prospect data is stored offline. `scripts/mobile_check.mjs` drives the app
+in Chromium at 360/390/412/430px and checks overflow, tap targets and console
+errors; Playwright is deliberately not a project dependency.
+
 ## The workspace
 
 **Leads sidebar** — search, filters for *needs reply*, *follow-up due* and *high priority*, and a sort that floats threads waiting on you to the top. Each row shows priority, follow-up state and conversation stage.
@@ -84,8 +138,9 @@ The model pass then extracts what patterns cannot: what they are building, who t
 1. Create/use a Supabase project.
 2. Run `supabase/schema.sql`, then `supabase/migrations/002_web_app.sql`, then
    `supabase/migrations/003_agent_brain.sql`, `supabase/migrations/004_coaching.sql`,
-   `supabase/migrations/005_research.sql`, `supabase/migrations/006_coaching_chains.sql`
-   and `supabase/migrations/007_memory_narrative.sql`, in a development database.
+   `supabase/migrations/005_research.sql`, `supabase/migrations/006_coaching_chains.sql`,
+   `supabase/migrations/007_memory_narrative.sql` and
+   `supabase/migrations/008_outbound_accounts.sql`, in a development database.
 3. Copy `.env.example` to `.env` and add server-side credentials.
 4. `npm install`
 5. `npm run seed` — seeds the playbook rules.
@@ -172,7 +227,9 @@ routes and never reaches the browser. The schema enables RLS and intentionally
 creates no permissive browser policies.
 
 Every data API route requires an authenticated session (`src/lib/auth.ts`):
-single-operator password auth with an HMAC-signed, httpOnly session cookie. With
+single-operator password auth with an HMAC-signed, httpOnly session cookie. The
+session lasts 30 days and renews once past halfway, so a phone in daily use
+stays signed in while an abandoned device still expires. With
 auth unconfigured the app runs open **only** in local development; in production
 it returns 503 rather than exposing prospect data.
 
