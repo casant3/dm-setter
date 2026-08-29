@@ -1,3 +1,4 @@
+import { checkDuplicateOutreach } from "@/core/accounts";
 import { getStore } from "@/lib/store";
 import { fail, handleError, ok, readJson } from "@/lib/api";
 import { requireAuth } from "@/lib/auth";
@@ -5,13 +6,22 @@ import { PRIORITIES, type NewLeadInput } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 
-export async function GET() {
+export async function GET(request: Request) {
   const denied = await requireAuth();
   if (denied) return denied;
 
   try {
     const store = getStore();
-    return ok({ leads: await store.listLeads(), store_mode: store.mode });
+    // `?account=<id>` narrows the inbox to one outbound page; `?account=none`
+    // shows the conversations nothing has been attributed to yet.
+    const param = new URL(request.url).searchParams.get("account");
+    const accountId = param === null || param === "all" ? undefined : param === "none" ? null : param;
+
+    const [leads, accounts] = await Promise.all([
+      store.listLeads({ accountId }),
+      store.listOutboundAccounts({ includeInactive: true }),
+    ]);
+    return ok({ leads, accounts, account_filter: param ?? "all", store_mode: store.mode });
   } catch (error) {
     return handleError(error);
   }
@@ -31,10 +41,28 @@ export async function POST(request: Request) {
     if (body.priority && !PRIORITIES.includes(body.priority)) return fail("Unknown priority");
 
     const store = getStore();
-    if (await store.getLeadByHandle(handle)) return fail(`@${handle} is already in the pipeline`, 409);
+    const accountId = body.outbound_account_id?.trim() || null;
+    if (accountId && !(await store.getOutboundAccount(accountId))) return fail("Unknown outbound account", 400);
+
+    // The same prospect may legitimately be reached from a second page — a
+    // personal page and a brand page both have reasons to — so this is a warning
+    // the operator must see rather than a rule the code enforces. What it will
+    // not do is let the same page open a second thread with the same person.
+    const duplicate = checkDuplicateOutreach({
+      handle,
+      accountId,
+      existing: await store.findLeadsByHandle(handle),
+      accounts: await store.listOutboundAccounts({ includeInactive: true }),
+    });
+    const acknowledged = Boolean((body as { acknowledge_duplicate?: boolean }).acknowledge_duplicate);
+    if (duplicate.severity === "blocked") return fail(duplicate.message, 409);
+    if (duplicate.severity === "warn" && !acknowledged) {
+      return ok({ duplicate, requires_acknowledgement: true }, 409);
+    }
 
     const lead = await store.createLead({
       instagram_handle: handle,
+      outbound_account_id: accountId,
       name: body.name?.trim() || null,
       company: body.company?.trim() || null,
       job_title: body.job_title?.trim() || null,
@@ -48,7 +76,7 @@ export async function POST(request: Request) {
       followup_status: body.followup_status ?? "none",
       conversation_stage: "NEW_LEAD",
     });
-    return ok({ lead }, 201);
+    return ok({ lead, duplicate: duplicate.severity === "none" ? null : duplicate }, 201);
   } catch (error) {
     return handleError(error);
   }

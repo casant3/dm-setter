@@ -58,12 +58,56 @@ export const TIER_EVIDENCE: Record<OutcomeTier, EvidenceClass> = {
 };
 
 // ---------------------------------------------------------------------------
+// Outbound accounts
+// ---------------------------------------------------------------------------
+
+/**
+ * An account we send from.
+ *
+ * Outreach now runs from more than one Instagram page, and which page a
+ * conversation belongs to changes what may be said in it: the same prospect can
+ * legitimately be in two threads, but the two threads are not one conversation
+ * and must never be merged. This is attribution only — no credentials, no
+ * sending, no login.
+ */
+export type OutboundAccount = {
+  id: string;
+  platform: string;
+  /** Without the @. Unique per platform. */
+  handle: string;
+  display_name: string | null;
+  active: boolean;
+  notes: string | null;
+  created_at: string;
+};
+
+/**
+ * The account historical conversations are attributed to.
+ *
+ * The Trello corpus does not record which page sent each thread. Guessing would
+ * put false attribution into analytics that decisions are made from, so those
+ * conversations are attributed to an explicit unknown account instead.
+ */
+export const LEGACY_ACCOUNT_HANDLE = "unknown_legacy";
+export const LEGACY_ACCOUNT_NAME = "Unknown / legacy (before account tracking)";
+
+export type NewOutboundAccount = {
+  platform?: string;
+  handle: string;
+  display_name?: string | null;
+  active?: boolean;
+  notes?: string | null;
+};
+
+// ---------------------------------------------------------------------------
 // Leads and messages
 // ---------------------------------------------------------------------------
 
 export type Lead = {
   id: string;
   instagram_handle: string;
+  /** Which of our accounts is talking to this prospect. */
+  outbound_account_id: string | null;
   name: string | null;
   company: string | null;
   job_title: string | null;
@@ -383,6 +427,9 @@ export type AgentResult = {
 };
 
 export type LeadListItem = Lead & {
+  /** Denormalised for the sidebar, so it can label and filter without a join. */
+  outbound_account_handle: string | null;
+  outbound_account_name: string | null;
   message_count: number;
   last_message_at: string | null;
   last_message_preview: string | null;
@@ -392,6 +439,7 @@ export type LeadListItem = Lead & {
 
 export type NewLeadInput = {
   instagram_handle: string;
+  outbound_account_id?: string | null;
   name?: string | null;
   company?: string | null;
   job_title?: string | null;

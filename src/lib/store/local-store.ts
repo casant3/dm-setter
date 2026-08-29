@@ -14,9 +14,13 @@ import type {
   Message,
   NewLeadInput,
   NewMessageInput,
+  NewOutboundAccount,
+  OutboundAccount,
   SetterPreference,
   SourceConversation,
 } from "@/lib/types";
+import { isLegacyAccount, normaliseHandle } from "@/core/accounts";
+import { LEGACY_ACCOUNT_HANDLE, LEGACY_ACCOUNT_NAME } from "@/lib/types";
 import type { FeedbackInput, FeedbackStats, Store, SuggestionDraft } from "@/lib/store/store";
 import { seedData } from "@/lib/store/seed";
 
@@ -31,6 +35,7 @@ type Db = {
   source_conversations: SourceConversation[];
   setter_preferences: SetterPreference[];
   coaching_examples: CoachingExample[];
+  outbound_accounts: OutboundAccount[];
 };
 
 const STOPWORDS = new Set([
@@ -76,6 +81,7 @@ export class LocalStore implements Store {
         source_conversations: raw.source_conversations ?? [],
         setter_preferences: raw.setter_preferences ?? [],
         coaching_examples: raw.coaching_examples ?? [],
+        outbound_accounts: raw.outbound_accounts ?? [],
       };
     } catch {
       const fresh = seedData();
@@ -98,15 +104,89 @@ export class LocalStore implements Store {
     return run;
   }
 
-  async listLeads(): Promise<LeadListItem[]> {
+  // -------------------------------------------------------------------------
+  // Outbound accounts
+  // -------------------------------------------------------------------------
+
+  async listOutboundAccounts(options: { includeInactive?: boolean } = {}): Promise<OutboundAccount[]> {
     const db = await this.read();
-    const items = db.leads.map((lead) => {
+    const rows = db.outbound_accounts ?? [];
+    return (options.includeInactive ? rows : rows.filter((a) => a.active)).sort((a, b) =>
+      a.handle.localeCompare(b.handle),
+    );
+  }
+
+  async getOutboundAccount(id: string): Promise<OutboundAccount | null> {
+    const db = await this.read();
+    return (db.outbound_accounts ?? []).find((a) => a.id === id) ?? null;
+  }
+
+  async createOutboundAccount(input: NewOutboundAccount): Promise<OutboundAccount> {
+    const handle = normaliseHandle(input.handle);
+    if (!handle) throw new Error("An account handle is required");
+    return this.transact((db) => {
+      db.outbound_accounts = db.outbound_accounts ?? [];
+      const platform = input.platform?.trim() || "instagram";
+      const existing = db.outbound_accounts.find(
+        (a) => a.platform === platform && normaliseHandle(a.handle) === handle,
+      );
+      if (existing) throw new Error(`@${handle} is already an outbound account`);
+      const account: OutboundAccount = {
+        id: randomUUID(),
+        platform,
+        handle,
+        display_name: input.display_name?.trim() || null,
+        active: input.active ?? true,
+        notes: input.notes?.trim() || null,
+        created_at: new Date().toISOString(),
+      };
+      db.outbound_accounts.push(account);
+      return account;
+    });
+  }
+
+  async updateOutboundAccount(id: string, patch: Partial<OutboundAccount>): Promise<OutboundAccount> {
+    return this.transact((db) => {
+      const account = (db.outbound_accounts ?? []).find((a) => a.id === id);
+      if (!account) throw new Error(`Outbound account not found: ${id}`);
+      Object.assign(account, patch, { id, created_at: account.created_at });
+      if (patch.handle) account.handle = normaliseHandle(patch.handle);
+      return account;
+    });
+  }
+
+  async legacyOutboundAccount(): Promise<OutboundAccount> {
+    const existing = (await this.listOutboundAccounts({ includeInactive: true })).find((a) =>
+      isLegacyAccount(a),
+    );
+    if (existing) return existing;
+    return this.createOutboundAccount({
+      platform: "unknown",
+      handle: LEGACY_ACCOUNT_HANDLE,
+      display_name: LEGACY_ACCOUNT_NAME,
+      // Inactive on purpose: nothing new is ever sent from "we do not know".
+      active: false,
+      notes: "Conversations from before outbound accounts were tracked. Never guess which page sent them.",
+    });
+  }
+
+  async listLeads(options: { accountId?: string | null } = {}): Promise<LeadListItem[]> {
+    const db = await this.read();
+    const accounts = new Map((db.outbound_accounts ?? []).map((a) => [a.id, a]));
+    const scoped =
+      options.accountId === undefined
+        ? db.leads
+        : db.leads.filter((l) => (l.outbound_account_id ?? null) === (options.accountId ?? null));
+    const items = scoped.map((lead) => {
+      const account = lead.outbound_account_id ? accounts.get(lead.outbound_account_id) ?? null : null;
       const msgs = db.messages
         .filter((m) => m.lead_id === lead.id)
         .sort((a, b) => a.sent_at.localeCompare(b.sent_at));
       const last = msgs[msgs.length - 1];
       return {
         ...lead,
+        outbound_account_handle: account?.handle ?? null,
+        outbound_account_name: account?.display_name ?? null,
         message_count: msgs.length,
         last_message_at: last?.sent_at ?? null,
         last_message_preview: last ? last.message_text.slice(0, 140) : null,
@@ -126,9 +206,23 @@ export class LocalStore implements Store {
     return db.leads.find((l) => l.id === id) ?? null;
   }
 
-  async getLeadByHandle(handle: string): Promise<Lead | null> {
+  async getLeadByHandle(handle: string, options: { accountId?: string | null } = {}): Promise<Lead | null> {
+    const matches = await this.findLeadsByHandle(handle);
+    if (options.accountId !== undefined) {
+      return matches.find((l) => (l.outbound_account_id ?? null) === (options.accountId ?? null)) ?? null;
+    }
+    // No account given: the most recently active thread is the one meant.
+    return (
+      [...matches].sort((a, b) =>
+        (b.last_contact_at ?? b.created_at ?? "").localeCompare(a.last_contact_at ?? a.created_at ?? ""),
+      )[0] ?? null
+    );
+  }
+
+  async findLeadsByHandle(handle: string): Promise<Lead[]> {
     const db = await this.read();
-    return db.leads.find((l) => l.instagram_handle.toLowerCase() === handle.toLowerCase()) ?? null;
+    const wanted = normaliseHandle(handle);
+    return db.leads.filter((l) => normaliseHandle(l.instagram_handle) === wanted);
   }
 
   async createLead(input: NewLeadInput): Promise<Lead> {
@@ -137,6 +231,7 @@ export class LocalStore implements Store {
       const lead: Lead = {
         id: randomUUID(),
         instagram_handle: input.instagram_handle,
+        outbound_account_id: input.outbound_account_id ?? null,
         name: input.name ?? null,
         company: input.company ?? null,
         job_title: input.job_title ?? null,

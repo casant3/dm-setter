@@ -3,6 +3,8 @@ import { getDb } from "@/core/db";
 import { embeddingModel, getOpenAI, openaiConfigured } from "@/core/openai";
 import { emptyMemory } from "@/core/memory";
 import { record } from "@/core/observability";
+import { normaliseHandle } from "@/core/accounts";
+import { LEGACY_ACCOUNT_HANDLE, LEGACY_ACCOUNT_NAME } from "@/lib/types";
 import type {
   AiSuggestion,
   CoachingExample,
@@ -15,6 +17,8 @@ import type {
   Message,
   NewLeadInput,
   NewMessageInput,
+  NewOutboundAccount,
+  OutboundAccount,
   SetterPreference,
   SourceConversation,
 } from "@/lib/types";
@@ -63,14 +67,78 @@ async function embed(text: string): Promise<number[]> {
 export class SupabaseStore implements Store {
   readonly mode = "supabase" as const;
 
-  async listLeads(): Promise<LeadListItem[]> {
+  // -------------------------------------------------------------------------
+  // Outbound accounts
+  // -------------------------------------------------------------------------
+
+  async listOutboundAccounts(options: { includeInactive?: boolean } = {}): Promise<OutboundAccount[]> {
+    let query = getDb().from("outbound_accounts").select("*").order("handle");
+    if (!options.includeInactive) query = query.eq("active", true);
+    return unwrap(await query, "listOutboundAccounts") || [];
+  }
+
+  async getOutboundAccount(id: string): Promise<OutboundAccount | null> {
+    return unwrap(await getDb().from("outbound_accounts").select("*").eq("id", id).maybeSingle(), "getOutboundAccount");
+  }
+
+  async createOutboundAccount(input: NewOutboundAccount): Promise<OutboundAccount> {
+    return unwrapOne(
+      await getDb()
+        .from("outbound_accounts")
+        .insert({
+          platform: input.platform?.trim() || "instagram",
+          handle: normaliseHandle(input.handle),
+          display_name: input.display_name?.trim() || null,
+          active: input.active ?? true,
+          notes: input.notes?.trim() || null,
+        })
+        .select("*")
+        .single(),
+      "createOutboundAccount",
+    );
+  }
+
+  async updateOutboundAccount(id: string, patch: Partial<OutboundAccount>): Promise<OutboundAccount> {
+    const next = { ...patch };
+    if (next.handle) next.handle = normaliseHandle(next.handle);
+    return unwrapOne(
+      await getDb().from("outbound_accounts").update(next).eq("id", id).select("*").single(),
+      "updateOutboundAccount",
+    );
+  }
+
+  async legacyOutboundAccount(): Promise<OutboundAccount> {
+    const existing = unwrap(
+      await getDb().from("outbound_accounts").select("*").eq("handle", LEGACY_ACCOUNT_HANDLE).maybeSingle(),
+      "legacyOutboundAccount",
+    );
+    if (existing) return existing;
+    return this.createOutboundAccount({
+      platform: "unknown",
+      handle: LEGACY_ACCOUNT_HANDLE,
+      display_name: LEGACY_ACCOUNT_NAME,
+      // Inactive on purpose: nothing new is ever sent from "we do not know".
+      active: false,
+      notes: "Conversations from before outbound accounts were tracked. Never guess which page sent them.",
+    });
+  }
+
+  async listLeads(options: { accountId?: string | null } = {}): Promise<LeadListItem[]> {
     const db = getDb();
-    const res = await db.from("lead_inbox").select("*").order("last_activity_at", { ascending: false });
+    let query = db.from("lead_inbox").select("*").order("last_activity_at", { ascending: false });
+    if (options.accountId === null) query = query.is("outbound_account_id", null);
+    else if (options.accountId !== undefined) query = query.eq("outbound_account_id", options.accountId);
+    const res = await query;
     const rows = unwrap(res, "listLeads");
+
+    const accounts = new Map((await this.listOutboundAccounts({ includeInactive: true })).map((a) => [a.id, a]));
     return (rows || []).map((row: Record<string, unknown>) => {
       const { last_activity_at: _ignored, ...lead } = row;
+      const account = row.outbound_account_id ? accounts.get(String(row.outbound_account_id)) ?? null : null;
       return {
         ...(lead as unknown as Lead),
+        outbound_account_handle: account?.handle ?? null,
+        outbound_account_name: account?.display_name ?? null,
         message_count: Number(row.message_count ?? 0),
         last_message_at: (row.last_message_at as string) ?? null,
         last_message_preview: (row.last_message_preview as string) ?? null,
@@ -84,10 +152,26 @@ export class SupabaseStore implements Store {
     return unwrap(await getDb().from("leads").select("*").eq("id", id).maybeSingle(), "getLead");
   }
 
-  async getLeadByHandle(handle: string): Promise<Lead | null> {
-    return unwrap(
-      await getDb().from("leads").select("*").eq("instagram_handle", handle).maybeSingle(),
-      "getLeadByHandle",
+  async getLeadByHandle(handle: string, options: { accountId?: string | null } = {}): Promise<Lead | null> {
+    const matches = await this.findLeadsByHandle(handle);
+    if (options.accountId !== undefined) {
+      return matches.find((l) => (l.outbound_account_id ?? null) === (options.accountId ?? null)) ?? null;
+    }
+    // The same handle can exist under several accounts; without one, the most
+    // recently active thread is the one being asked about.
+    return (
+      [...matches].sort((a, b) =>
+        (b.last_contact_at ?? b.created_at ?? "").localeCompare(a.last_contact_at ?? a.created_at ?? ""),
+      )[0] ?? null
+    );
+  }
+
+  async findLeadsByHandle(handle: string): Promise<Lead[]> {
+    return (
+      unwrap(
+        await getDb().from("leads").select("*").ilike("instagram_handle", normaliseHandle(handle)),
+        "findLeadsByHandle",
+      ) || []
     );
   }
 

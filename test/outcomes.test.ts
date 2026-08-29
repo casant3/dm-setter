@@ -74,6 +74,7 @@ test("strong outcomes outrank a raw discovery booking in retrieval", () => {
 const lead: Lead = {
   id: "l1",
   instagram_handle: "founder",
+  outbound_account_id: null,
   name: "A Founder",
   company: null,
   job_title: null,

@@ -10,6 +10,8 @@ import type {
   Message,
   NewLeadInput,
   NewMessageInput,
+  NewOutboundAccount,
+  OutboundAccount,
   SetterPreference,
   SourceConversation,
   Strategy,
@@ -46,9 +48,31 @@ export type FeedbackStats = {
 export interface Store {
   readonly mode: "supabase" | "local";
 
-  listLeads(): Promise<LeadListItem[]>;
+  /**
+   * Outbound accounts we send from. Attribution only: no credentials are stored
+   * and nothing here sends anything.
+   */
+  listOutboundAccounts(options?: { includeInactive?: boolean }): Promise<OutboundAccount[]>;
+  getOutboundAccount(id: string): Promise<OutboundAccount | null>;
+  createOutboundAccount(input: NewOutboundAccount): Promise<OutboundAccount>;
+  updateOutboundAccount(id: string, patch: Partial<OutboundAccount>): Promise<OutboundAccount>;
+  /**
+   * The account historical conversations are attributed to, created on demand.
+   * Explicitly unknown, never a guess at which page sent them.
+   */
+  legacyOutboundAccount(): Promise<OutboundAccount>;
+
+  /** `accountId` narrows the inbox to one outbound account. */
+  listLeads(options?: { accountId?: string | null }): Promise<LeadListItem[]>;
   getLead(id: string): Promise<Lead | null>;
-  getLeadByHandle(handle: string): Promise<Lead | null>;
+  /**
+   * The same prospect can exist under more than one outbound account, so a
+   * handle alone no longer identifies a conversation: pass the account to get
+   * the right one, and use `findLeadsByHandle` to see all of them.
+   */
+  getLeadByHandle(handle: string, options?: { accountId?: string | null }): Promise<Lead | null>;
+  /** Every lead with this handle, across all accounts. Used for duplicate warnings. */
+  findLeadsByHandle(handle: string): Promise<Lead[]>;
   createLead(input: NewLeadInput): Promise<Lead>;
   updateLead(id: string, patch: Partial<Lead>): Promise<Lead>;
 
