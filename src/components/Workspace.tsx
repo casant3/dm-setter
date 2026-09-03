@@ -20,6 +20,7 @@ import { ImportDialog } from "@/components/ImportDialog";
 import { LeadsSidebar } from "@/components/LeadsSidebar";
 import { NewLeadDialog } from "@/components/NewLeadDialog";
 import { AccountsPanel } from "@/components/AccountsPanel";
+import { SheetImportPanel } from "@/components/SheetImportPanel";
 import { MobileWorkspace } from "@/components/MobileWorkspace";
 import { useIsMobile } from "@/components/useMediaQuery";
 
@@ -43,6 +44,7 @@ export function Workspace() {
   const [showCorpus, setShowCorpus] = useState(false);
   const [showCoaching, setShowCoaching] = useState(false);
   const [showAccounts, setShowAccounts] = useState(false);
+  const [showSheetImport, setShowSheetImport] = useState(false);
   const [rightTab, setRightTab] = useState<"copilot" | "memory">("copilot");
   const isMobile = useIsMobile();
 
@@ -176,6 +178,7 @@ export function Workspace() {
           onCorrectMemory={correctMemory}
           onSignOut={signOut}
           onManageAccounts={() => setShowAccounts(true)}
+        onImportLeads={() => setShowSheetImport(true)}
           onAccountsChanged={() => void refreshLeads()}
           accountFor={accountFor}
         />
@@ -183,6 +186,13 @@ export function Workspace() {
             screen — the accounts panel is reachable from the inbox. */}
         {showAccounts && (
           <AccountsPanel onClose={() => setShowAccounts(false)} onChanged={() => void refreshLeads()} />
+        )}
+        {showSheetImport && (
+          <SheetImportPanel
+            accounts={accounts}
+            onClose={() => setShowSheetImport(false)}
+            onImported={() => void refreshLeads()}
+          />
         )}
       </>
     );
@@ -205,6 +215,7 @@ export function Workspace() {
         <span className="spacer" />
         {topError && <span className="error">{topError}</span>}
         <button className="btn small ghost" onClick={() => setShowAccounts(true)}>Accounts</button>
+        <button className="btn small ghost" onClick={() => setShowSheetImport(true)}>Import leads</button>
         <button className="btn small ghost" onClick={() => setShowCoaching(true)}>Coaching</button>
         <button className="btn small ghost" onClick={() => setShowCorpus(true)}>Corpus</button>
         <button className="btn small ghost" onClick={() => void signOut()}>
@@ -284,6 +295,13 @@ export function Workspace() {
 
       {showAccounts && (
         <AccountsPanel onClose={() => setShowAccounts(false)} onChanged={() => void refreshLeads()} />
+      )}
+      {showSheetImport && (
+        <SheetImportPanel
+          accounts={accounts}
+          onClose={() => setShowSheetImport(false)}
+          onImported={() => void refreshLeads()}
+        />
       )}
       {showCorpus && <CorpusPanel onClose={() => setShowCorpus(false)} />}
       {showCoaching && <CoachingPanel onClose={() => setShowCoaching(false)} />}

@@ -1285,3 +1285,35 @@ textarea:focus {
     min-height: 44px;
   }
 }
+
+/* Three actions rather than two once screenshots are in the loop. */
+.m-actions.three {
+  grid-template-columns: 1fr 1fr 1fr;
+}
+
+.m-actions.three .m-action {
+  font-size: 15px;
+}
+
+.shot-line {
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border-soft);
+}
+
+.shot-line-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+
+.shot-line textarea {
+  width: 100%;
+  font-size: 16px;
+  line-height: 1.45;
+  padding: 10px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--panel-2);
+  color: var(--text);
+}

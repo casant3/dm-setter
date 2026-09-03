@@ -16,6 +16,7 @@ import { clipboardReadSupported, copyText, readClipboard } from "@/components/cl
 import { InstallBanner } from "@/components/InstallPrompt";
 import { MemoryPanel } from "@/components/MemoryPanel";
 import { NewLeadDialog } from "@/components/NewLeadDialog";
+import { ScreenshotSheet } from "@/components/ScreenshotSheet";
 import { relativeTime } from "@/components/format";
 
 /**
@@ -56,6 +57,7 @@ export function MobileWorkspace(props: {
   onCorrectMemory: (patch: Record<string, string[] | number>) => Promise<void>;
   onSignOut: () => void;
   onManageAccounts: () => void;
+  onImportLeads: () => void;
   onAccountsChanged: () => void;
   accountFor: (lead: Lead | null | undefined) => OutboundAccount | null;
 }) {
@@ -64,6 +66,7 @@ export function MobileWorkspace(props: {
   const [query, setQuery] = useState("");
   const [showAddReply, setShowAddReply] = useState(false);
   const [showNewLead, setShowNewLead] = useState(false);
+  const [showScreenshot, setShowScreenshot] = useState(false);
 
   const { detail, result, accountFor } = props;
   const account = accountFor(detail?.lead);
@@ -104,6 +107,7 @@ export function MobileWorkspace(props: {
           onBack={() => setScreen("inbox")}
           onDetails={() => setScreen("details")}
           onAddReply={() => setShowAddReply(true)}
+          onScreenshot={() => setShowScreenshot(true)}
         />
       )}
 
@@ -128,6 +132,18 @@ export function MobileWorkspace(props: {
             setShowAddReply(false);
             // Logging the reply and asking what to say next is one intention.
             if (generate) props.onGenerate("");
+          }}
+        />
+      )}
+
+      {showScreenshot && detail && (
+        <ScreenshotSheet
+          leadId={detail.lead.id}
+          onClose={() => setShowScreenshot(false)}
+          onAdded={() => {
+            setShowScreenshot(false);
+            // A thread that just grew is a thread worth a fresh suggestion.
+            props.onGenerate("");
           }}
         />
       )}
@@ -169,6 +185,7 @@ function InboxScreen({
   onNewLead,
   onSignOut,
   onManageAccounts,
+  onImportLeads,
 }: {
   leads: LeadListItem[];
   accounts: OutboundAccount[];
@@ -186,6 +203,7 @@ function InboxScreen({
   onNewLead: () => void;
   onSignOut: () => void;
   onManageAccounts: () => void;
+  onImportLeads: () => void;
 }) {
   return (
     <>
@@ -193,6 +211,9 @@ function InboxScreen({
         <div className="m-header-row">
           <h1>Leads</h1>
           <span className="spacer" />
+          <button className="m-link" onClick={onImportLeads}>
+            Import
+          </button>
           <button className="m-link" onClick={onSignOut}>
             Sign out
           </button>
@@ -245,9 +266,25 @@ function InboxScreen({
         {topError && <p className="error m-pad">{topError}</p>}
         {loadingLeads && leads.length === 0 && <p className="m-empty-line">Loading…</p>}
         {!loadingLeads && visible.length === 0 && (
-          <p className="m-empty-line">
-            {leads.length === 0 ? "No leads yet. Add your first prospect." : "Nothing matches this filter."}
-          </p>
+          /* The inbox opens on "needs reply", so a quiet day looks identical to
+             an empty pipeline. Say which of the two it is, and offer the way
+             out in the same tap — otherwise a full pipeline reads as broken. */
+          <div className="m-empty-line">
+            {leads.length === 0 ? (
+              "No leads yet. Add your first prospect."
+            ) : query.trim() ? (
+              <>No lead matches “{query.trim()}”.</>
+            ) : filter === "all" ? (
+              "No leads on this account."
+            ) : (
+              <>
+                Nothing {FILTER_LABELS[filter].toLowerCase()} right now.{" "}
+                <button className="m-link" onClick={() => setFilter("all")}>
+                  Show all {counts.all}
+                </button>
+              </>
+            )}
+          </div>
         )}
 
         {visible.map((lead) => (
@@ -292,6 +329,7 @@ function ConversationScreen({
   onBack,
   onDetails,
   onAddReply,
+  onScreenshot,
   onGenerate,
   onFeedback,
 }: {
@@ -303,6 +341,7 @@ function ConversationScreen({
   onBack: () => void;
   onDetails: () => void;
   onAddReply: () => void;
+  onScreenshot: () => void;
   onGenerate: (prospectMessage?: string) => void;
   onFeedback: (feedback: SuggestionFeedback, finalMessage: string | null) => Promise<void>;
 }) {
@@ -440,9 +479,12 @@ function ConversationScreen({
         )}
       </main>
 
-      <nav className="m-actions" aria-label="Actions">
+      <nav className="m-actions three" aria-label="Actions">
         <button className="m-action" onClick={onAddReply}>
           Add reply
+        </button>
+        <button className="m-action" onClick={onScreenshot}>
+          Screenshot
         </button>
         <button className="m-action primary" disabled={generating} onClick={() => onGenerate("")}>
           {generating ? "Thinking…" : result ? "Regenerate" : "Generate"}

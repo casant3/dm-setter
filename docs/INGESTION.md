@@ -125,3 +125,28 @@ Every stage is idempotent. Cards are keyed on the Trello card id, screenshots on
 the attachment id, chunks replaced per conversation. Re-running the whole
 pipeline on the same input converges to the same state and cannot duplicate or
 corrupt verified work.
+
+## Not this pipeline: live screenshots
+
+Screenshotting a conversation from the app (**Screenshot** on a conversation) is
+a different thing and shares none of this machinery. It is one image, read once,
+into one thread:
+
+- No file ever lands on disk. The image is posted to the route, sent to the
+  vision model, and dropped — nothing is stored under `data/`, in the database,
+  or anywhere else.
+- The read is a **proposal**. Every line comes back for review with its sender,
+  whether the model was unsure, and whether the text was cut off; the operator
+  corrects the wording, flips the sender, or removes a line before anything is
+  written.
+- Spans that could not be read are returned as descriptions of where they are,
+  never as a guess at their content — the same rule stage 3 follows.
+- Lines already present in the thread are dropped, so the trailing context a
+  screenshot always includes is not appended twice.
+- Without `OPENAI_API_KEY` the route refuses with a 503 rather than returning
+  anything.
+
+The messages it appends are ordinary thread messages and feed qualification,
+memory and retrieval exactly as typed ones do. Nothing enters the *corpus* by
+this route — corpus rows still require the four-stage pipeline above and human
+verification.

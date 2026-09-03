@@ -32,6 +32,18 @@ The first build takes a couple of minutes. You get a URL like
 
 That is the complete list. Everything else has a working default.
 
+Two more are **optional**, and only for pulling the lead-vault sheet by link
+without link-sharing it:
+
+| Name | Value | Where it comes from |
+| --- | --- | --- |
+| `GOOGLE_SERVICE_ACCOUNT_EMAIL` | `…@….iam.gserviceaccount.com` | Google Cloud → IAM → Service accounts |
+| `GOOGLE_PRIVATE_KEY` | `-----BEGIN PRIVATE KEY-----…` | the JSON key for that service account (paste it whole; `\n` escapes are handled) |
+
+Then share the sheet with that address — **Viewer** is enough. Without them, a
+link works only if the sheet is link-shared, and pasting the tab into the import
+panel always works with no credentials at all.
+
 Set all four for **Production, Preview and Development** — Vercel asks per
 environment, and a preview deployment without them will simply refuse to serve.
 
@@ -61,6 +73,10 @@ variable, it is not this one.
 3. Open **Accounts** (top bar on desktop, the account tab row on a phone) and add
    the Instagram pages you send from.
 4. Add your first prospect. The account picker now has your pages in it.
+5. Or tap **Import** and bring the day's list in from the lead sheet — paste the
+   tab or give the link, check what it found, choose the page, import. Re-running
+   it later imports only what is new, so it can be pulled again as the sheet
+   fills.
 
 If the top bar says *Local store* rather than *Supabase*, the Supabase variables
 did not take — check them and redeploy.

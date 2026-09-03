@@ -132,6 +132,55 @@ export const api = {
       body: JSON.stringify({ feedback, ...options }),
     }),
 
+  // --- lead sheet import ---------------------------------------------------
+
+  sheetImportStatus: () =>
+    request<{ service_account: boolean; service_account_email: string | null; note: string }>(
+      "/api/leads/import-sheet",
+    ),
+
+  previewSheet: (input: { sheet_url?: string; csv?: string; outbound_account_id?: string | null; year?: number }) =>
+    request<{
+      summary: {
+        source: string;
+        days_with_leads: number;
+        empty_days: number;
+        blocks: string[];
+        found: number;
+        repeated_in_sheet: number;
+        new: number;
+        already_in_pipeline: number;
+        also_on_another_account: number;
+        unreadable_cells: number;
+      };
+      sample: { instagram_handle: string; note: string | null; source_date: string | null }[];
+      skipped: { raw: string; reason: string }[];
+      note: string;
+    }>("/api/leads/import-sheet", { method: "POST", body: JSON.stringify(input) }),
+
+  commitSheet: (input: { sheet_url?: string; csv?: string; outbound_account_id: string; year?: number }) =>
+    request<{ imported: number; skipped: number; account: string | null; note: string }>("/api/leads/import-sheet", {
+      method: "POST",
+      body: JSON.stringify({ ...input, commit: true }),
+    }),
+
+  // --- screenshots ---------------------------------------------------------
+
+  readScreenshot: (id: string, image: string) =>
+    request<{
+      lines: { sender: Sender; text: string; confidence: "high" | "low"; partial: boolean }[];
+      already_in_thread: number;
+      unreadable: string[];
+      needs_review: boolean;
+      note: string;
+    }>(`/api/leads/${id}/screenshot`, { method: "POST", body: JSON.stringify({ image }) }),
+
+  addScreenshotLines: (id: string, lines: { sender: Sender; text: string }[]) =>
+    request<{ added: number; note: string }>(`/api/leads/${id}/screenshot`, {
+      method: "POST",
+      body: JSON.stringify({ lines, commit: true }),
+    }),
+
   previewImport: (id: string, transcript: string, label_overrides?: Record<string, Sender>) =>
     request<ImportPreview>(`/api/leads/${id}/import`, {
       method: "POST",

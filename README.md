@@ -99,6 +99,8 @@ details — rather than a narrower desktop:
   account tabs across the top of the inbox.
 - Triage filters — needs reply, follow-up due, warm, call ready — carry counts
   for the selected account, and search matches a handle prefix first.
+- **Screenshot** reads a photo of the Instagram thread into the conversation
+  (see below) — the fastest way to get an exchange in from a phone.
 - Qualification, memory, retrieval and the audit live under **Details**.
 
 Installable as a PWA (standalone display, maskable icons, safe-area viewport).
@@ -132,6 +134,38 @@ errors; Playwright is deliberately not a project dependency.
 The model pass then extracts what patterns cannot: what they are building, who they named, what is in their way. It runs **incrementally** — only the messages since the last run, plus a short window of context and a list of what is already remembered — and does not run at all when nothing new has been said. Every item must carry the words it came from; a quote found verbatim in the thread is a fact, a quote that cannot be found is kept as a low-confidence inference. `relationship_summary` and `communication_style` are always inferences, never facts, because they are readings of a conversation rather than anything the prospect said — they reach the model labelled as such, and a human correction replaces them permanently.
 
 **Adding leads and importing DMs** — new leads need only a handle. Existing threads can be pasted in: the parser handles `Me:` / `Them:` style, `@handle:` labels, leading timestamps, and Instagram's export format where the sender sits on its own line. Unrecognised speaker labels are surfaced in a preview so they can be mapped before anything is written.
+
+**Importing the daily lead list** — *Import leads* reads the lead-vault sheet:
+either a Google Sheets link, or the tab pasted or uploaded as CSV/TSV. The grid
+is date rows (`26/8`, `22nd of July`, `03/09/2026`) with handles beside them, and
+a cell may carry a note after the handle (`someone - runs an agency`). A cell
+that reads as prose rather than a handle is skipped and shown rather than turned
+into a prospect.
+
+Nothing is written on the first pass. The preview reports how many days and
+handles were found, how many days are still empty, how many handles are new,
+how many are already in the pipeline, how many are repeated in the sheet, how
+many are already being contacted from another page, and which cells could not be
+read — and only then is a page chosen and the import committed. Re-running the
+same sheet imports nothing, so the daily list can be pulled repeatedly as it
+fills. Imported leads start at `NEW_LEAD` with no messages; nothing is sent.
+
+A link works when the sheet is link-shared, or with a Google service account
+(`GOOGLE_SERVICE_ACCOUNT_EMAIL` + `GOOGLE_PRIVATE_KEY`) that the sheet is shared
+with — view access is enough. The service-account JWT is signed with `node:crypto`,
+so there is no Google client library in the dependency tree. Pasting always works
+and needs no credentials.
+
+**Screenshots of a conversation** — on a conversation, **Screenshot** sends a
+photo of the Instagram thread to a vision model and returns what it read. Every
+line comes back for review with its sender, whether the model was unsure of it,
+and whether it was cut off; each can be reworded, flipped between *Them* and
+*You*, or removed before anything reaches the thread. Lines already in the thread
+are dropped, so the context messages a screenshot always includes are not
+appended twice, and spans the model could not read are listed as unread rather
+than guessed at. **The image is never stored** — it is read and the bytes are
+dropped. Without `OPENAI_API_KEY` the read refuses outright rather than
+inventing a transcript.
 
 ## Running it online
 
@@ -192,6 +226,8 @@ Both are development conveniences. Supabase is the source of truth and GPT-5.6 i
 | `GET/POST /api/leads/:id/messages` | read or append messages |
 | `POST /api/leads/:id/generate` | run the pipeline; returns strategy, gate, draft, reviewer, retrieved examples |
 | `POST /api/leads/:id/import` | parse a pasted thread (preview by default, `commit: true` to write) |
+| `GET/POST /api/leads/import-sheet` | whether a sheet link can be used / import the lead-vault sheet (preview by default, `commit: true` to write) |
+| `POST /api/leads/:id/screenshot` | read a conversation screenshot (preview by default, `commit: true` to append the reviewed lines) |
 | `POST /api/suggestions/:id/feedback` | record `used` / `edited` / `rejected` |
 | `GET/PATCH /api/leads/:id/memory` | inspect or correct long-term memory |
 | `POST /api/leads/:id/research` | record researched facts about a lead, with source and verified status |
@@ -257,7 +293,10 @@ fixtures are synthetic.
 ## What still needs to be connected
 
 - OpenAI API key/billing. Without it the app runs on a deterministic offline
-  engine and screenshot transcription cannot run at all.
+  engine, and neither corpus transcription nor reading a conversation screenshot
+  can run at all — both refuse rather than guess.
+- A Google service account, if lead sheets are to be pulled by link without
+  link-sharing them. Pasting the tab needs nothing.
 - Supabase project credentials.
 - Verified rows in `credibility_assets`. The ranker returns nothing when no asset
   is relevant, and the writer is told to cite nothing — but with an empty table it
