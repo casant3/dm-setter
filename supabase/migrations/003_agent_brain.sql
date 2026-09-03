@@ -135,7 +135,28 @@ alter table credibility_assets add column if not exists industries text[] defaul
 -- Outcome filtering moves out of SQL: reranking needs winners and failures in
 -- one candidate pool so it can bucket and label them. `filter_outcomes` is kept
 -- for backwards compatibility and may be null.
+--
+-- This returns more columns than the V1 version in schema.sql, and Postgres
+-- will not let `create or replace` change a function's return type — so the
+-- old one is dropped first. Every overload is dropped by its real signature,
+-- because the argument types differ between a database where pgvector lives in
+-- `extensions` and one where it lives in `public`.
 -- ---------------------------------------------------------------------------
+
+do $$
+declare
+  existing record;
+begin
+  for existing in
+    select p.oid::regprocedure as signature
+    from pg_proc p
+    join pg_namespace n on n.oid = p.pronamespace
+    where p.proname = 'match_conversation_chunks'
+      and n.nspname = 'public'
+  loop
+    execute format('drop function if exists %s', existing.signature);
+  end loop;
+end $$;
 
 create or replace function match_conversation_chunks(
   query_embedding extensions.vector(1536),

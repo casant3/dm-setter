@@ -158,6 +158,25 @@ create table if not exists ai_suggestions (
   created_at timestamptz default now()
 );
 
+-- A later migration widens this function's result. Postgres will not let
+-- `create or replace` change a return type in either direction, so any existing
+-- version is dropped first and this file stays replayable over a migrated
+-- database.
+do $$
+declare
+  existing record;
+begin
+  for existing in
+    select p.oid::regprocedure as signature
+    from pg_proc p
+    join pg_namespace n on n.oid = p.pronamespace
+    where p.proname = 'match_conversation_chunks'
+      and n.nspname = 'public'
+  loop
+    execute format('drop function if exists %s', existing.signature);
+  end loop;
+end $$;
+
 create or replace function match_conversation_chunks(
   query_embedding extensions.vector(1536),
   match_count int default 8,
