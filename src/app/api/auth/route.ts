@@ -12,7 +12,7 @@ export async function GET() {
 export async function POST(request: Request) {
   try {
     if (!authConfigured()) {
-      return fail("Authentication is not configured. Run `npm run auth:setup`.", 503);
+      return fail("Authentication is not configured. Set APP_PASSWORD in the environment.", 503);
     }
     const { password } = await readJson<{ password?: string }>(request);
     if (!password || !verifyPassword(password)) {

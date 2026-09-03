@@ -1,4 +1,4 @@
-import { createHmac, randomBytes, scryptSync, timingSafeEqual } from "node:crypto";
+import { createHash, createHmac, randomBytes, scryptSync, timingSafeEqual } from "node:crypto";
 import { cookies } from "next/headers";
 
 /**
@@ -29,18 +29,60 @@ const RENEW_AFTER_SECONDS = SESSION_TTL_SECONDS / 2;
 
 export type AuthConfig = { passwordHash: string; salt: string; secret: string };
 
+/**
+ * Deriving config from a plain `APP_PASSWORD`.
+ *
+ * The hashed form below is preferred: it means the password itself is never
+ * stored anywhere. But producing a hash needs a machine with Node on it, and
+ * this app is deployed from a phone and a browser — so requiring that put an
+ * offline step between the operator and their own tool.
+ *
+ * Setting `APP_PASSWORD` instead lets the host hold the password in the same
+ * encrypted environment that already holds the Supabase service-role key, which
+ * is a far more powerful secret. The salt is derived from the password so no
+ * second value is needed, which does forgo per-deployment salting; scrypt's cost
+ * still stands behind it, and for a single-operator app that is the right trade
+ * against not being able to sign in at all.
+ */
+function derivedSalt(password: string): string {
+  return createHash("sha256").update(`dm-setter-salt:${password}`).digest("hex").slice(0, 32);
+}
+
+/**
+ * The session secret, when none was supplied.
+ *
+ * Derived from the password, so a forged cookie needs the password — which is
+ * the same thing as simply signing in. Stable across restarts and instances, so
+ * sessions survive a redeploy, and changing the password signs every device out.
+ */
+function derivedSecret(password: string): string {
+  return createHash("sha256").update(`dm-setter-session:${password}`).digest("hex");
+}
+
 export function authConfigured(): boolean {
-  return Boolean(process.env.APP_PASSWORD_HASH && process.env.APP_PASSWORD_SALT && process.env.SESSION_SECRET);
+  if (process.env.APP_PASSWORD_HASH && process.env.APP_PASSWORD_SALT && process.env.SESSION_SECRET) return true;
+  return Boolean(process.env.APP_PASSWORD);
 }
 
 function config(): AuthConfig {
   const passwordHash = process.env.APP_PASSWORD_HASH;
   const salt = process.env.APP_PASSWORD_SALT;
   const secret = process.env.SESSION_SECRET;
-  if (!passwordHash || !salt || !secret) {
-    throw new Error("Auth is not configured. Run `npm run auth:setup` and set the printed values.");
+  if (passwordHash && salt && secret) return { passwordHash, salt, secret };
+
+  const plain = process.env.APP_PASSWORD;
+  if (plain) {
+    const derived = salt || derivedSalt(plain);
+    return {
+      passwordHash: hashPassword(plain, derived),
+      salt: derived,
+      secret: secret || derivedSecret(plain),
+    };
   }
-  return { passwordHash, salt, secret };
+
+  throw new Error(
+    "Auth is not configured. Set APP_PASSWORD, or run `npm run auth:setup` and set APP_PASSWORD_HASH, APP_PASSWORD_SALT and SESSION_SECRET.",
+  );
 }
 
 export function hashPassword(password: string, salt: string): string {
@@ -143,7 +185,10 @@ export async function requireAuth(): Promise<Response | null> {
   if (!authConfigured()) {
     if (process.env.NODE_ENV !== "production") return null;
     return Response.json(
-      { error: "Authentication is not configured. Run `npm run auth:setup` and set APP_PASSWORD_HASH, APP_PASSWORD_SALT and SESSION_SECRET." },
+      {
+        error:
+          "Authentication is not configured. Set APP_PASSWORD in the environment, or run `npm run auth:setup` for the hashed form.",
+      },
       { status: 503 },
     );
   }

@@ -133,6 +133,12 @@ The model pass then extracts what patterns cannot: what they are building, who t
 
 **Adding leads and importing DMs** — new leads need only a handle. Existing threads can be pasted in: the parser handles `Me:` / `Them:` style, `@handle:` labels, leading timestamps, and Instagram's export format where the sender sits on its own line. Unrecognised speaker labels are surfaced in a preview so they can be mapped before anything is written.
 
+## Running it online
+
+The app is meant to be used from a phone, which means it needs to be deployed.
+[`docs/DEPLOY.md`](docs/DEPLOY.md) is the whole procedure — it takes four
+environment variables and no terminal.
+
 ## Setup
 
 1. Create/use a Supabase project.
@@ -144,8 +150,9 @@ The model pass then extracts what patterns cannot: what they are building, who t
 3. Copy `.env.example` to `.env` and add server-side credentials.
 4. `npm install`
 5. `npm run seed` — seeds the playbook rules.
-5b. `npm run auth:setup` — generates the password hash and session secret. The app
-   refuses every request in production until these are set.
+5b. Set a password: either `APP_PASSWORD=...` in `.env`, or `npm run auth:setup`
+   for the hashed form. The app refuses every request in production until one of
+   the two is set.
 6. Add VERIFIED rows to `credibility_assets` (clients/media outlets/case studies). The model is forbidden from inventing them.
 7. Ingest leads/messages/transcripts.
 8. `npm run dev` and open http://localhost:3000.
