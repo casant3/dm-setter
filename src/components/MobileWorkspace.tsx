@@ -55,6 +55,8 @@ export function MobileWorkspace(props: {
   onCreateLead: (input: NewLeadInput & { acknowledge_duplicate?: boolean }) => Promise<void>;
   onCorrectMemory: (patch: Record<string, string[] | number>) => Promise<void>;
   onSignOut: () => void;
+  onManageAccounts: () => void;
+  onAccountsChanged: () => void;
   accountFor: (lead: Lead | null | undefined) => OutboundAccount | null;
 }) {
   const [screen, setScreen] = useState<Screen>("inbox");
@@ -166,6 +168,7 @@ function InboxScreen({
   onOpenLead,
   onNewLead,
   onSignOut,
+  onManageAccounts,
 }: {
   leads: LeadListItem[];
   accounts: OutboundAccount[];
@@ -182,6 +185,7 @@ function InboxScreen({
   onOpenLead: (id: string) => void;
   onNewLead: () => void;
   onSignOut: () => void;
+  onManageAccounts: () => void;
 }) {
   return (
     <>
@@ -210,6 +214,9 @@ function InboxScreen({
               @{a.handle}
             </button>
           ))}
+          <button className="m-tab" onClick={onManageAccounts}>
+            {accounts.length === 0 ? "+ Add your page" : "Manage accounts"}
+          </button>
         </div>
 
         <input

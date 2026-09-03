@@ -16,10 +16,13 @@ export function NewLeadDialog({
   accounts: OutboundAccount[];
   defaultAccountId?: string | null;
 }) {
+  // With one page there is nothing to choose. With several, the page is chosen
+  // deliberately or not at all: defaulting to whichever happens to sort first is
+  // how a prospect gets messaged from the wrong account, which cannot be undone.
   const [form, setForm] = useState<NewLeadInput>({
     instagram_handle: "",
     priority: "medium",
-    outbound_account_id: defaultAccountId ?? accounts[0]?.id ?? null,
+    outbound_account_id: defaultAccountId ?? (accounts.length === 1 ? accounts[0].id : null),
   });
   const [error, setError] = useState<string | null>(null);
   const [duplicate, setDuplicate] = useState<DuplicateWarning | null>(null);
@@ -64,6 +67,7 @@ export function NewLeadDialog({
               onChange={(e) => setForm((f) => ({ ...f, outbound_account_id: e.target.value || null }))}
             >
               {accounts.length === 0 && <option value="">No outbound account yet</option>}
+              {accounts.length > 1 && !form.outbound_account_id && <option value="">Choose the page…</option>}
               {accounts.map((a) => (
                 <option key={a.id} value={a.id}>
                   @{a.handle}
@@ -170,7 +174,11 @@ export function NewLeadDialog({
               Add anyway
             </button>
           ) : (
-            <button type="submit" className="btn primary" disabled={busy || !form.instagram_handle.trim()}>
+            <button
+              type="submit"
+              className="btn primary"
+              disabled={busy || !form.instagram_handle.trim() || (accounts.length > 0 && !form.outbound_account_id)}
+            >
               {busy ? <span className="spin" /> : "Add lead"}
             </button>
           )}

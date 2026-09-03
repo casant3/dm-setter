@@ -19,6 +19,7 @@ import { CopilotPanel } from "@/components/CopilotPanel";
 import { ImportDialog } from "@/components/ImportDialog";
 import { LeadsSidebar } from "@/components/LeadsSidebar";
 import { NewLeadDialog } from "@/components/NewLeadDialog";
+import { AccountsPanel } from "@/components/AccountsPanel";
 import { MobileWorkspace } from "@/components/MobileWorkspace";
 import { useIsMobile } from "@/components/useMediaQuery";
 
@@ -41,6 +42,7 @@ export function Workspace() {
   const [showImport, setShowImport] = useState(false);
   const [showCorpus, setShowCorpus] = useState(false);
   const [showCoaching, setShowCoaching] = useState(false);
+  const [showAccounts, setShowAccounts] = useState(false);
   const [rightTab, setRightTab] = useState<"copilot" | "memory">("copilot");
   const isMobile = useIsMobile();
 
@@ -151,29 +153,38 @@ export function Workspace() {
   // screens, and the reply the operator has to copy is the main thing on screen.
   if (isMobile) {
     return (
-      <MobileWorkspace
-        status={status}
-        leads={leads}
-        accounts={accounts}
-        accountId={accountId}
-        onAccountChange={setAccountId}
-        selectedId={selectedId}
-        onSelect={setSelectedId}
-        detail={detail}
-        result={result}
-        generating={generating}
-        loadingLeads={loadingLeads}
-        genError={genError}
-        topError={topError}
-        onGenerate={(msg) => void generate(msg)}
-        onAddMessage={addMessage}
-        onFeedback={sendFeedback}
-        onUpdateLead={updateLead}
-        onCreateLead={createLead}
-        onCorrectMemory={correctMemory}
-        onSignOut={signOut}
-        accountFor={accountFor}
-      />
+      <>
+        <MobileWorkspace
+          status={status}
+          leads={leads}
+          accounts={accounts}
+          accountId={accountId}
+          onAccountChange={setAccountId}
+          selectedId={selectedId}
+          onSelect={setSelectedId}
+          detail={detail}
+          result={result}
+          generating={generating}
+          loadingLeads={loadingLeads}
+          genError={genError}
+          topError={topError}
+          onGenerate={(msg) => void generate(msg)}
+          onAddMessage={addMessage}
+          onFeedback={sendFeedback}
+          onUpdateLead={updateLead}
+          onCreateLead={createLead}
+          onCorrectMemory={correctMemory}
+          onSignOut={signOut}
+          onManageAccounts={() => setShowAccounts(true)}
+          onAccountsChanged={() => void refreshLeads()}
+          accountFor={accountFor}
+        />
+        {/* Dialogs live outside the screen switcher so they can open from any
+            screen — the accounts panel is reachable from the inbox. */}
+        {showAccounts && (
+          <AccountsPanel onClose={() => setShowAccounts(false)} onChanged={() => void refreshLeads()} />
+        )}
+      </>
     );
   }
 
@@ -193,6 +204,7 @@ export function Workspace() {
         )}
         <span className="spacer" />
         {topError && <span className="error">{topError}</span>}
+        <button className="btn small ghost" onClick={() => setShowAccounts(true)}>Accounts</button>
         <button className="btn small ghost" onClick={() => setShowCoaching(true)}>Coaching</button>
         <button className="btn small ghost" onClick={() => setShowCorpus(true)}>Corpus</button>
         <button className="btn small ghost" onClick={() => void signOut()}>
@@ -270,6 +282,9 @@ export function Workspace() {
         )}
       </div>
 
+      {showAccounts && (
+        <AccountsPanel onClose={() => setShowAccounts(false)} onChanged={() => void refreshLeads()} />
+      )}
       {showCorpus && <CorpusPanel onClose={() => setShowCorpus(false)} />}
       {showCoaching && <CoachingPanel onClose={() => setShowCoaching(false)} />}
       {showNewLead && (

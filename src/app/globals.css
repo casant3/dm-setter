@@ -1271,3 +1271,17 @@ textarea:focus {
   font-size: 13px;
   color: var(--text-dim);
 }
+
+.account-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border-soft);
+}
+
+@media (max-width: 899px) {
+  .account-row .btn {
+    min-height: 44px;
+  }
+}
