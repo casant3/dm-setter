@@ -98,7 +98,12 @@ details — rather than a narrower desktop:
 - *Sending from @account* appears on every conversation and inbox row, with
   account tabs across the top of the inbox.
 - Triage filters — needs reply, follow-up due, warm, call ready — carry counts
-  for the selected account, and search matches a handle prefix first.
+  for the selected account, and search matches a handle prefix first. **None of
+  them require upkeep**: the thread decides. Waiting on us means they sent last;
+  due means we sent last and three days have passed with no answer; warm means
+  the exchange has real depth, or a call is booked. `priority`,
+  `interest_level` and `next_followup_at` still win where they happen to be set,
+  but nothing asks for them and nothing depends on them.
 - **Screenshot** reads a photo of the Instagram thread into the conversation
   (see below) — the fastest way to get an exchange in from a phone.
 - Qualification, memory, retrieval and the audit live under **Details**.
@@ -133,7 +138,12 @@ errors; Playwright is deliberately not a project dependency.
 
 The model pass then extracts what patterns cannot: what they are building, who they named, what is in their way. It runs **incrementally** — only the messages since the last run, plus a short window of context and a list of what is already remembered — and does not run at all when nothing new has been said. Every item must carry the words it came from; a quote found verbatim in the thread is a fact, a quote that cannot be found is kept as a low-confidence inference. `relationship_summary` and `communication_style` are always inferences, never facts, because they are readings of a conversation rather than anything the prospect said — they reach the model labelled as such, and a human correction replaces them permanently.
 
-**Adding leads and importing DMs** — new leads need only a handle. Existing threads can be pasted in: the parser handles `Me:` / `Them:` style, `@handle:` labels, leading timestamps, and Instagram's export format where the sender sits on its own line. Unrecognised speaker labels are surfaced in a preview so they can be mapped before anything is written.
+**Adding leads and importing DMs** — a new lead is a handle and the page it is
+sent from, nothing else. The profile fields — name, company, role, niche, goal,
+media gap — sit behind an optional disclosure for the rare prospect who was
+researched before the first DM; they are not how the agent finds out who
+someone is, it reads that from the conversation. Leaving them empty costs
+nothing. Existing threads can be pasted in: the parser handles `Me:` / `Them:` style, `@handle:` labels, leading timestamps, and Instagram's export format where the sender sits on its own line. Unrecognised speaker labels are surfaced in a preview so they can be mapped before anything is written.
 
 **Importing the daily lead list** — *Import leads* reads the lead-vault sheet:
 either a Google Sheets link, or the tab pasted or uploaded as CSV/TSV. The grid

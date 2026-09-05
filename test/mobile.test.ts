@@ -103,12 +103,17 @@ test("search ignores a leading @ and casing", () => {
 // Filters
 // ---------------------------------------------------------------------------
 
+const JUST_NOW = new Date().toISOString();
+
 test("each filter selects what it says it does", () => {
-  const waiting = lead({ instagram_handle: "waiting", awaiting_reply: true });
-  const due = lead({ instagram_handle: "due", followup_status: "overdue" });
-  const warm = lead({ instagram_handle: "warm", priority: "high" });
-  const ready = lead({ instagram_handle: "ready", conversation_stage: "CALL_READY" });
-  const cold = lead({ instagram_handle: "cold" });
+  // Everything here was messaged just now, so nothing falls into the derived
+  // cases below and each filter is tested on the field it is named for.
+  const fresh = { last_message_at: JUST_NOW, message_count: 1 };
+  const waiting = lead({ instagram_handle: "waiting", awaiting_reply: true, last_message_sender: "prospect", ...fresh });
+  const due = lead({ instagram_handle: "due", followup_status: "overdue", ...fresh });
+  const warm = lead({ instagram_handle: "warm", priority: "high", ...fresh });
+  const ready = lead({ instagram_handle: "ready", conversation_stage: "CALL_READY", ...fresh });
+  const cold = lead({ instagram_handle: "cold", ...fresh });
   const leads = [waiting, due, warm, ready, cold];
 
   assert.deepEqual(filterLeads(leads, { filter: "needs_reply" }).map((l) => l.instagram_handle), ["waiting"]);
@@ -121,6 +126,85 @@ test("each filter selects what it says it does", () => {
   assert.ok(isWarm(warm) && !isWarm(cold));
   assert.ok(isCallReady(ready) && !isCallReady(cold));
   assert.ok(isCallReady(lead({ instagram_handle: "booked", booked_call: true })));
+});
+
+// ---------------------------------------------------------------------------
+// Triage without bookkeeping
+//
+// `priority`, `interest_level`, `followup_status` and `next_followup_at` are
+// set by hand and nothing in the pipeline writes them. Two of the five filters
+// used to read only those, so they were empty unless the operator kept a CRM up
+// to date. These cover the signals that now stand in, taken from the thread.
+// ---------------------------------------------------------------------------
+
+const days = (n: number) => new Date(Date.now() - n * 86_400_000).toISOString();
+
+test("a thread we sent last and heard nothing on becomes due on its own", () => {
+  const silent = lead({
+    instagram_handle: "silent",
+    last_message_sender: "setter",
+    last_message_at: days(4),
+    awaiting_reply: false,
+  });
+  assert.equal(isDue(silent), true, "four days of silence after our message is a follow-up");
+
+  const yesterday = lead({
+    instagram_handle: "yesterday",
+    last_message_sender: "setter",
+    last_message_at: days(1),
+    awaiting_reply: false,
+  });
+  assert.equal(isDue(yesterday), false, "one day is not yet a follow-up");
+});
+
+test("a thread waiting on us is never also a follow-up", () => {
+  // They replied and we have not answered. That is "needs reply", not chasing.
+  const theirTurn = lead({
+    instagram_handle: "theirs",
+    awaiting_reply: true,
+    last_message_sender: "prospect",
+    last_message_at: days(9),
+  });
+  assert.equal(isDue(theirTurn), false);
+});
+
+test("a date set by hand still decides, in both directions", () => {
+  const silentButScheduled = lead({
+    instagram_handle: "scheduled",
+    last_message_sender: "setter",
+    last_message_at: days(30),
+    next_followup_at: new Date(Date.now() + 86_400_000).toISOString(),
+  });
+  assert.equal(isDue(silentButScheduled), false, "an explicit future date beats the silence rule");
+});
+
+test("a real back-and-forth counts as warm without anyone tagging it", () => {
+  const conversation = lead({ instagram_handle: "talking", message_count: 6, priority: "medium" });
+  assert.equal(isWarm(conversation), true);
+
+  const unanswered = lead({ instagram_handle: "opener", message_count: 1, priority: "medium" });
+  assert.equal(isWarm(unanswered), false, "an unanswered opener is not a warm lead");
+});
+
+test("the chip count agrees with the list it filters", () => {
+  // `isDue` takes an optional `now`, and Array.filter passes the index as its
+  // second argument — so counting with a bare `filter(isDue)` silently dated
+  // every lead to the epoch and the counts disagreed with the rows.
+  const leads = [
+    lead({ instagram_handle: "silent_a", last_message_sender: "setter", last_message_at: days(5) }),
+    lead({ instagram_handle: "silent_b", last_message_sender: "setter", last_message_at: days(6) }),
+    lead({ instagram_handle: "silent_c", last_message_sender: "setter", last_message_at: days(7) }),
+    lead({ instagram_handle: "waiting", awaiting_reply: true, last_message_sender: "prospect", last_message_at: days(2) }),
+  ];
+  const counts = filterCounts(leads);
+  for (const key of LEAD_FILTERS) {
+    assert.equal(counts[key], filterLeads(leads, { filter: key }).length, `count for "${key}" matches its rows`);
+  }
+  assert.equal(counts.followup_due, 3);
+});
+
+test("a booked call is warm regardless of depth or tagging", () => {
+  assert.equal(isWarm(lead({ instagram_handle: "booked", message_count: 2, booked_call: true })), true);
 });
 
 test("a follow-up dated in the future is not yet due", () => {

@@ -1317,3 +1317,29 @@ textarea:focus {
   background: var(--panel-2);
   color: var(--text);
 }
+
+/* An optional section of a form, shut by default.
+   The fields inside are never required and nothing in the pipeline depends on
+   them, so they should cost no attention until they are wanted. */
+.form-optional {
+  margin-top: 12px;
+  border-top: 1px solid var(--border-soft);
+  padding-top: 10px;
+}
+.form-optional > summary {
+  cursor: pointer;
+  color: var(--text-dim);
+  font-size: 13px;
+  padding: 6px 0;
+  min-height: 32px;
+  list-style: none;
+}
+.form-optional > summary::-webkit-details-marker { display: none; }
+.form-optional > summary::before {
+  content: "▸ ";
+  display: inline-block;
+  transition: transform 0.12s ease;
+}
+.form-optional[open] > summary::before { content: "▾ "; }
+.form-optional > summary:hover { color: var(--text); }
+.form-optional > .form-grid { margin-top: 8px; }

@@ -21,14 +21,44 @@ export const FILTER_LABELS: Record<LeadFilter, string> = {
 
 const PRIORITY_RANK = { urgent: 0, high: 1, medium: 2, low: 3 } as const;
 
-export function isDue(lead: LeadListItem): boolean {
+/** A thread we sent last and have heard nothing back on for this long is due. */
+export const SILENT_DAYS_BEFORE_DUE = 3;
+
+/** Messages either way before a thread counts as a conversation rather than a pitch. */
+export const DEPTH_FOR_WARM = 4;
+
+/**
+ * Due a follow-up.
+ *
+ * A date set by hand still wins, but almost none ever are: keeping follow-up
+ * dates is exactly the CRM bookkeeping this app exists to avoid, and a filter
+ * that only works when the operator maintains it is a filter that is always
+ * empty. So the thread answers it instead — we spoke last, and they have not
+ * come back — which is the same judgement made without anyone typing it.
+ */
+export function isDue(lead: LeadListItem, now = Date.now()): boolean {
   if (lead.followup_status === "overdue" || lead.followup_status === "owed_reply") return true;
-  if (!lead.next_followup_at) return false;
-  return new Date(lead.next_followup_at).getTime() <= Date.now();
+  if (lead.next_followup_at) return new Date(lead.next_followup_at).getTime() <= now;
+
+  // Nothing set by hand: read it off the conversation.
+  if (lead.awaiting_reply || lead.last_message_sender !== "setter" || !lead.last_message_at) return false;
+  const silentDays = (now - new Date(lead.last_message_at).getTime()) / 86_400_000;
+  return silentDays >= SILENT_DAYS_BEFORE_DUE;
 }
 
+/**
+ * Worth the operator's attention next.
+ *
+ * `priority` and `interest_level` are set by hand and nothing in the pipeline
+ * ever writes them, so on their own this filter stays empty forever. Depth is
+ * the signal that costs nothing: a thread several messages deep is a
+ * conversation someone is actually having, which a cold handle with an
+ * unanswered opener is not.
+ */
 export function isWarm(lead: LeadListItem): boolean {
-  return lead.priority === "high" || lead.priority === "urgent" || lead.interest_level === "high";
+  if (lead.priority === "high" || lead.priority === "urgent" || lead.interest_level === "high") return true;
+  if (lead.booked_call) return true;
+  return lead.message_count >= DEPTH_FOR_WARM;
 }
 
 export function isCallReady(lead: LeadListItem): boolean {
@@ -113,8 +143,10 @@ export function filterCounts(leads: LeadListItem[], accountId?: string | null): 
   return {
     all: scoped.length,
     needs_reply: scoped.filter((l) => l.awaiting_reply).length,
-    followup_due: scoped.filter(isDue).length,
-    high_priority: scoped.filter(isWarm).length,
-    call_ready: scoped.filter(isCallReady).length,
+    // Called with one argument deliberately: Array.filter passes the index as
+    // the second, which `isDue` would read as `now`.
+    followup_due: scoped.filter((l) => isDue(l)).length,
+    high_priority: scoped.filter((l) => isWarm(l)).length,
+    call_ready: scoped.filter((l) => isCallReady(l)).length,
   };
 }

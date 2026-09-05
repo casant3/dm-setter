@@ -56,7 +56,8 @@ export function NewLeadDialog({
       <form className="dialog" onClick={(e) => e.stopPropagation()} onSubmit={(e) => void submit(e)}>
         <h2>Add a lead</h2>
         <p className="muted">
-          Only the handle is required. Everything else feeds qualification, so fill in what you already know.
+          The handle and the page are all this needs. Everything else the agent learns from the conversation
+          itself — there is nothing here to keep up to date.
         </p>
 
         <div className="form-grid">
@@ -87,6 +88,16 @@ export function NewLeadDialog({
               onChange={set("instagram_handle")}
             />
           </label>
+        </div>
+
+        {/* Everything below is optional and stays shut.
+            These fields are not how the agent finds out who someone is — it reads
+            that from the conversation. They exist for the rare case where the
+            operator already researched the prospect before the first DM, and
+            presenting them open turns every new lead into a form to fill in. */}
+        <details className="form-optional">
+          <summary>Already know something about them?</summary>
+          <div className="form-grid">
           <label>
             Name
             <input type="text" value={form.name ?? ""} onChange={set("name")} />
@@ -142,7 +153,8 @@ export function NewLeadDialog({
               ))}
             </select>
           </label>
-        </div>
+          </div>
+        </details>
 
         {error && <p className="error" style={{ marginTop: 12 }}>{error}</p>}
 
