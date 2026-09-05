@@ -251,8 +251,14 @@ export function CopilotPanel({
                     <span className="pill">{result.booking.state.replace(/_/g, " ")}</span>
                     {result.booking.next_action}
                   </p>
+                  {result.booking.slots.length > 0 && (
+                    <p style={{ margin: "0 0 8px" }}>
+                      Times to offer: <strong>{result.booking.slots.join(" or ")}</strong>
+                    </p>
+                  )}
                   <p className="muted" style={{ margin: 0 }}>
-                    No-show risk: <strong>{result.booking.no_show_risk}</strong> — {result.booking.no_show_mitigation}
+                    No-show risk (advisory): <strong>{result.booking.no_show_risk}</strong> —{" "}
+                    {result.booking.no_show_mitigation}
                   </p>
                   {result.booking.no_show_factors.length > 0 && (
                     <ul className="list">

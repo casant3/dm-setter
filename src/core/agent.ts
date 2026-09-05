@@ -4,11 +4,11 @@ import { evaluateGate, totalScore } from "@/core/gate";
 import { planMessage } from "@/core/message-plan";
 import { reconcileQualification } from "@/core/qualification-evidence";
 import { applyExchangeToMemory } from "@/core/memory";
-import { memoryPatchFromExtraction, transcriptFor } from "@/core/memory-extract";
+import { buildExtractionInput, memoryPatchFromExtraction } from "@/core/memory-extract";
 import { offlineLlm } from "@/core/offline-llm";
 import { openaiConfigured } from "@/core/openai";
 import { openaiLlm } from "@/core/openai-llm";
-import { timed } from "@/core/observability";
+import { record, timed } from "@/core/observability";
 import type { SetterLlm } from "@/core/llm";
 import { getStore } from "@/lib/store";
 import type { Store } from "@/lib/store/store";
@@ -100,6 +100,7 @@ export async function runSetterForContext(
     booking: ctx.booking,
     noShow: ctx.noShow,
     verifiedResearch: (ctx.memory?.research_facts ?? []).filter((f) => f.verified),
+    slotProposal: ctx.slotProposal,
   });
   ctx.plan = plan;
 
@@ -160,7 +161,7 @@ export async function runSetterForContext(
           commercial_clarity_needed: enriched.understanding.commercial_clarity_needed?.reason ?? null,
         },
         plan,
-        booking: { state: ctx.booking.state, no_show_risk: ctx.noShow.risk },
+        booking: { state: ctx.booking.state, no_show_risk: ctx.noShow.risk, slots_offered: plan.slots.map((s) => s.label) },
         audit: finalAudit,
         evidence_adjustments: strategy.evidence_adjustments ?? [],
         temperature: ctx.temperature.temperature,
@@ -214,6 +215,7 @@ export async function runSetterForContext(
     booking: {
       state: ctx.booking.state,
       next_action: ctx.booking.next_action,
+      slots: plan.slots.map((s) => s.label),
       no_show_risk: ctx.noShow.risk,
       no_show_factors: ctx.noShow.factors,
       no_show_mitigation: ctx.noShow.mitigation,
@@ -276,11 +278,40 @@ export async function recordExchange(
   const extractor = llm ?? defaultDeps().llm;
   if (!extractor.extractMemory) return;
 
+  const current = await store.getMemory(leadId);
+  const input = buildExtractionInput(current, messages);
+
+  // Nothing new to read: the last run already covered every message. Calling the
+  // model again would spend a request re-deriving memory it has already
+  // produced, and risk paraphrasing a settled fact into a near-duplicate.
+  if (input.skip) {
+    record({ op: "memory.skipped", ms: 0, count: 0 });
+    return;
+  }
+
   try {
-    const extraction = await timed("memory", () => extractor.extractMemory!(transcriptFor(messages)));
-    const current = await store.getMemory(leadId);
-    const { patch: extracted } = memoryPatchFromExtraction(current, leadId, extraction.result, messages);
-    await store.upsertMemory(leadId, extracted);
+    const extraction = await timed(
+      "memory",
+      () => extractor.extractMemory!(input.transcript, input.alreadyKnown),
+      { count: input.newMessages.length },
+    );
+    const { patch: extracted, stats } = memoryPatchFromExtraction(current, leadId, extraction.result, messages, {
+      messagesConsidered: input.newMessages.length,
+    });
+    await store.upsertMemory(leadId, { ...extracted, extraction_state: input.state });
+    record({
+      op: "memory.extracted",
+      ms: extraction.ms,
+      count: stats.proposed,
+      // Counts only — never the remembered text itself.
+      extra: {
+        considered: stats.messages_considered,
+        facts: stats.facts,
+        inferences: stats.inferences,
+        duplicates: stats.duplicates_ignored,
+        human_fields_skipped: stats.human_fields_skipped,
+      },
+    });
   } catch (error) {
     // Memory extraction is an enhancement, not a precondition: a failure here
     // must never lose the exchange that has already been recorded.

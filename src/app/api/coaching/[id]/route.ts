@@ -5,7 +5,16 @@ import { requireAuth } from "@/lib/auth";
 export const dynamic = "force-dynamic";
 
 type Params = { params: Promise<{ id: string }> };
-type Body = { kind: "rule" | "example"; decision: "approve" | "reject"; rule?: string; approved_reply?: string; why?: string | null };
+type Body = {
+  kind: "rule" | "example";
+  decision: "approve" | "reject";
+  rule?: string;
+  approved_reply?: string;
+  why?: string | null;
+  /** A reviewer may narrow what an imported example applies to. */
+  tags?: string[];
+  applies_when?: Record<string, string[]> | null;
+};
 
 /**
  * Approves or rejects a proposal.
@@ -36,9 +45,23 @@ export async function PATCH(request: Request, { params }: Params) {
     }
 
     if (body.kind === "example") {
+      const reply = body.approved_reply?.trim();
+
+      // Approving means "follow this reply". An imported correction chain has no
+      // approved reply of its own — the person approving it has to say which
+      // wording they are standing behind.
+      if (body.decision === "approve") {
+        const existing = (await store.listCoachingExamples()).find((e) => e.id === id);
+        if (!reply && !existing?.approved_reply) {
+          return fail("This candidate has no approved reply. Supply the wording you want followed as `approved_reply`.");
+        }
+      }
+
       const example = await store.updateCoachingExample(id, {
-        ...(body.approved_reply?.trim() ? { approved_reply: body.approved_reply.trim() } : {}),
+        ...(reply ? { approved_reply: reply } : {}),
         ...(body.why !== undefined ? { why: body.why?.trim() || null } : {}),
+        ...(body.tags ? { tags: body.tags } : {}),
+        ...(body.applies_when !== undefined ? { applies_when: body.applies_when } : {}),
         status: body.decision === "approve" ? "approved" : "rejected",
         approved_at: body.decision === "approve" ? now : null,
       });

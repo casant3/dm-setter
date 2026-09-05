@@ -1,78 +1,42 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import type { LeadListItem } from "@/lib/types";
+import type { LeadListItem, OutboundAccount } from "@/lib/types";
 import { FOLLOWUP_LABELS, followupTone, priorityTone, relativeTime } from "@/components/format";
-
-type Filter = "all" | "needs_reply" | "followup_due" | "high_priority";
-
-const FILTERS: { key: Filter; label: string }[] = [
-  { key: "all", label: "All" },
-  { key: "needs_reply", label: "Needs reply" },
-  { key: "followup_due", label: "Follow-up due" },
-  { key: "high_priority", label: "High priority" },
-];
-
-const PRIORITY_RANK = { urgent: 0, high: 1, medium: 2, low: 3 } as const;
-
-function isDue(lead: LeadListItem): boolean {
-  if (lead.followup_status === "overdue" || lead.followup_status === "owed_reply") return true;
-  if (!lead.next_followup_at) return false;
-  return new Date(lead.next_followup_at).getTime() <= Date.now();
-}
+import { FILTER_LABELS, LEAD_FILTERS, filterCounts, filterLeads, type LeadFilter } from "@/components/lead-filters";
 
 export function LeadsSidebar({
   leads,
+  accounts,
+  accountId,
+  onAccountChange,
   selectedId,
   onSelect,
   onNewLead,
   loading,
 }: {
   leads: LeadListItem[];
+  accounts: OutboundAccount[];
+  /** `undefined` = every account. */
+  accountId: string | undefined;
+  onAccountChange: (id: string | undefined) => void;
   selectedId: string | null;
   onSelect: (id: string) => void;
   onNewLead: () => void;
   loading: boolean;
 }) {
-  const [filter, setFilter] = useState<Filter>("all");
+  const [filter, setFilter] = useState<LeadFilter>("all");
   const [query, setQuery] = useState("");
 
-  const visible = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    return leads
-      .filter((lead) => {
-        if (filter === "needs_reply" && !lead.awaiting_reply) return false;
-        if (filter === "followup_due" && !isDue(lead)) return false;
-        if (filter === "high_priority" && lead.priority !== "high" && lead.priority !== "urgent") return false;
-        if (!q) return true;
-        return [lead.name, lead.instagram_handle, lead.company, lead.niche]
-          .filter(Boolean)
-          .some((v) => String(v).toLowerCase().includes(q));
-      })
-      .sort((a, b) => {
-        // Threads waiting on us come first, then priority, then recency.
-        if (a.awaiting_reply !== b.awaiting_reply) return a.awaiting_reply ? -1 : 1;
-        const pa = PRIORITY_RANK[a.priority ?? "medium"];
-        const pb = PRIORITY_RANK[b.priority ?? "medium"];
-        if (pa !== pb) return pa - pb;
-        return (b.last_message_at ?? "").localeCompare(a.last_message_at ?? "");
-      });
-  }, [leads, filter, query]);
-
-  const counts = useMemo(
-    () => ({
-      needsReply: leads.filter((l) => l.awaiting_reply).length,
-      due: leads.filter(isDue).length,
-    }),
-    [leads],
-  );
+  const visible = useMemo(() => filterLeads(leads, { filter, query, accountId }), [leads, filter, query, accountId]);
+  const counts = useMemo(() => filterCounts(leads, accountId), [leads, accountId]);
 
   return (
     <section className="column" aria-label="Leads">
       <div className="column-header">
         <span className="column-title">Leads</span>
-        <span className="badge">{leads.length}</span>
-        {counts.needsReply > 0 && <span className="badge bad">{counts.needsReply} awaiting</span>}
+        <span className="badge">{counts.all}</span>
+        {counts.needs_reply > 0 && <span className="badge bad">{counts.needs_reply} awaiting</span>}
         <div className="spacer" style={{ flex: 1 }} />
         <button className="btn small primary" onClick={onNewLead}>
           + Lead
@@ -90,11 +54,30 @@ export function LeadsSidebar({
         />
       </div>
 
+      {accounts.length > 0 && (
+        <div className="lead-filters" role="group" aria-label="Filter by outbound account">
+          <button className="chip" aria-pressed={accountId === undefined} onClick={() => onAccountChange(undefined)}>
+            All accounts
+          </button>
+          {accounts.map((account) => (
+            <button
+              key={account.id}
+              className="chip"
+              aria-pressed={accountId === account.id}
+              onClick={() => onAccountChange(account.id)}
+              title={account.display_name ?? account.handle}
+            >
+              @{account.handle}
+            </button>
+          ))}
+        </div>
+      )}
+
       <div className="lead-filters" role="group" aria-label="Filter leads">
-        {FILTERS.map((f) => (
-          <button key={f.key} className="chip" aria-pressed={filter === f.key} onClick={() => setFilter(f.key)}>
-            {f.label}
-            {f.key === "followup_due" && counts.due > 0 ? ` (${counts.due})` : ""}
+        {LEAD_FILTERS.map((key) => (
+          <button key={key} className="chip" aria-pressed={filter === key} onClick={() => setFilter(key)}>
+            {FILTER_LABELS[key]}
+            {key !== "all" && counts[key] > 0 ? ` (${counts[key]})` : ""}
           </button>
         ))}
       </div>
@@ -128,6 +111,12 @@ export function LeadsSidebar({
             )}
 
             <div className="lead-meta">
+              {/* Which page is sending, shown whenever more than one is in view. */}
+              {lead.outbound_account_handle && accountId === undefined && (
+                <span className="badge" title={`Sending from @${lead.outbound_account_handle}`}>
+                  @{lead.outbound_account_handle}
+                </span>
+              )}
               {lead.priority && lead.priority !== "medium" && lead.priority !== "low" && (
                 <span className={`badge ${priorityTone(lead.priority)}`}>{lead.priority}</span>
               )}

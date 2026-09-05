@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import type { Lead, Message, Sender } from "@/lib/types";
+import type { Lead, Message, OutboundAccount, Sender } from "@/lib/types";
 import { FOLLOWUP_STATUSES, PRIORITIES } from "@/lib/types";
 import { FOLLOWUP_LABELS, PRIORITY_LABELS, absoluteTime, toDateInput } from "@/components/format";
 
@@ -13,9 +13,12 @@ export function ConversationView({
   onImport,
   onGenerate,
   generating,
+  account,
 }: {
   lead: Lead;
   messages: Message[];
+  /** The page this conversation is being sent from. */
+  account?: OutboundAccount | null;
   onUpdateLead: (patch: Partial<Lead>) => Promise<void>;
   onAddMessage: (sender: Sender, text: string) => Promise<void>;
   onImport: () => void;
@@ -54,6 +57,14 @@ export function ConversationView({
             @{lead.instagram_handle}
           </span>
         </h2>
+        {/* Which page is talking to this person is never a detail: sending from
+            the wrong account is not recoverable. */}
+        <div className="account-line">
+          Sending from{" "}
+          <strong>{account ? `@${account.handle}` : "an unassigned account"}</strong>
+          {account?.display_name ? ` · ${account.display_name}` : ""}
+          {account && !account.active ? " · retired" : ""}
+        </div>
         <div className="sub">
           {[lead.job_title, lead.company, lead.niche, lead.location].filter(Boolean).join(" · ") ||
             "No profile details yet"}

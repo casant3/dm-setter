@@ -1,4 +1,12 @@
-import { assessBooking, assessNoShowRisk, type BookingAssessment, type NoShowAssessment } from "@/core/booking";
+import {
+  assessBooking,
+  assessNoShowRisk,
+  detectStatedTimezone,
+  proposeSlots,
+  type BookingAssessment,
+  type NoShowAssessment,
+  type SlotProposal,
+} from "@/core/booking";
 import { classifyBrushOff, clarificationAlreadyUsed, type BrushOffAssessment } from "@/core/brush-off";
 import { buildCoachingLayer, type CoachingLayer } from "@/core/coaching";
 import { rankCredibility } from "@/core/credibility";
@@ -7,7 +15,7 @@ import type { MessagePlan } from "@/core/message-plan";
 import { assessMotivation, FRAME_GUIDANCE, type MotivationAssessment } from "@/core/motivation";
 import { assessQualificationEvidence, type QualificationEvidence } from "@/core/qualification-evidence";
 import { assessTemperature, type TemperatureAssessment } from "@/core/temperature";
-import { recomputeUnderstanding } from "@/core/memory";
+import { narrativeItem, recomputeUnderstanding } from "@/core/memory";
 import { CASSEY, buildQueryText, rerankAndBucket } from "@/core/retrieval";
 import type { Store } from "@/lib/store/store";
 import type {
@@ -49,8 +57,10 @@ export type LeadContext = {
   evidence: QualificationEvidence;
   /** How far into booking this conversation actually is. */
   booking: BookingAssessment;
-  /** Whether a call booked now would be honoured. */
+  /** Advisory risk that a call booked now is not honoured. Never a gate. */
   noShow: NoShowAssessment;
+  /** Two concrete times to offer, and how to talk about timezone. */
+  slotProposal: SlotProposal;
   events: ConversationEvent[];
   credibility: CredibilityAsset[];
   examples: RetrievedExamples;
@@ -130,6 +140,7 @@ export async function loadLeadContext(store: Store, leadId: string, newMessage: 
       dialogue,
       booking,
     }),
+    slotProposal: proposeSlots({ timezone: lead.timezone ?? detectStatedTimezone(withPending) }),
     events,
     credibility: [],
     examples: { strong_winners: [], partial_wins: [], failures: [], voice_examples: [] },
@@ -174,6 +185,19 @@ export async function enrichContext(
       examples: coachingExamples,
       liveMessages,
       stage: strategy.stage,
+      // Coaching is ranked against what this message is actually doing. Advice
+      // about building value before a call is wrong in the message that books
+      // one, and dumping everything in buries whatever was relevant.
+      situation: {
+        move: ctx.plan?.move ?? null,
+        stage: strategy.stage,
+        temperature: ctx.temperature.temperature,
+        brush_off: ctx.brushOff.kind,
+        motivation: ctx.motivation.primary,
+        avoid_money_framing: ctx.motivation.avoid_money_framing,
+        booking_state: ctx.booking.state,
+        service_confusion: ctx.understanding.confusion !== null,
+      },
     }),
   };
 }
@@ -188,6 +212,30 @@ function itemValues(items: MemoryItem[] | undefined, limit = 12): string[] {
     if (i.provenance === "research") return `${i.value} (researched — they have not told us this)`;
     return i.value;
   });
+}
+
+/**
+ * Renders a narrative field as what it is.
+ *
+ * "Prospect trusts Cassey" is the model's reading of a conversation, and handing
+ * it back as a bare string invites the next pass to treat it as something the
+ * prospect said. It goes in labelled, with its provenance, unless a person has
+ * confirmed it.
+ */
+function narrativeFor(value: unknown) {
+  const item = narrativeItem(value);
+  if (!item) return null;
+  return {
+    value: item.value,
+    provenance: item.provenance,
+    confidence: item.confidence,
+    verified: Boolean(item.verified),
+    supported_by: item.quote ?? null,
+    source_message_id: item.source_message_id ?? null,
+    note: item.verified
+      ? "Confirmed by Cassey. Treat it as accurate."
+      : "This is an interpretation, not something they said. Do not repeat it back to them as fact, and do not use it as qualification evidence.",
+  };
 }
 
 function summariseChunk(c: { outcome: string | null; outcome_tier: string | null; stage: string | null; niche: string | null; content: string; setter_name: string | null; match_reasons?: string[]; metadata: Record<string, unknown> | null }) {
@@ -247,7 +295,7 @@ export function compactContext(ctx: LeadContext): string {
       },
       long_term_memory: m
         ? {
-            relationship_summary: m.relationship_summary,
+            relationship_summary: narrativeFor(m.relationship_summary),
             businesses: itemValues(m.businesses),
             commercial_goals: itemValues(m.goals),
             personal_goals: itemValues(m.personal_goals),
@@ -270,7 +318,7 @@ export function compactContext(ctx: LeadContext): string {
             key_entities: itemValues(m.key_entities),
             timing_constraints: itemValues(m.timing_constraints),
             followup_commitments: itemValues(m.followup_commitments),
-            communication_style: m.communication_style,
+            communication_style: narrativeFor(m.communication_style),
             current_strategy: m.current_strategy,
           }
         : null,
@@ -338,7 +386,9 @@ export function compactContext(ctx: LeadContext): string {
       no_show_risk: {
         risk: ctx.noShow.risk,
         factors: ctx.noShow.factors,
+        adapt_the_booking: ctx.noShow.guidance,
         mitigation: ctx.noShow.mitigation,
+        note: "Advisory only. Qualification decides whether a call may be offered; this decides how it is offered — how explicitly the purpose is framed, which times to pick, how much commitment to ask for. Never withhold a call from a qualified prospect because of this risk.",
       },
       qualification_evidence_note:
         "Score each dimension from this evidence. If you score above what the evidence supports, you must supply the exact quote that justifies it in `evidence`; unverifiable quotes are discarded and the score is capped.",
@@ -352,6 +402,13 @@ export function compactContext(ctx: LeadContext): string {
             next_if_no_reply: ctx.plan.next_if_no_reply,
             forbidden_moves: ctx.plan.forbidden,
             ask_about: ctx.plan.ask_topic,
+            offer_these_times: ctx.plan.slots.map((s) => s.label),
+            timezone: ctx.plan.timezone_note,
+            adapt_for_risk: ctx.plan.risk_adaptation,
+            slots_note:
+              ctx.plan.slots.length > 0
+                ? "Propose the call and these two times in the SAME message. That is one move, not two. Do not ask what day suits — offering the times is what removes the extra turn. Adapt the wording naturally; do not read them out as a list."
+                : null,
             note: "Make exactly this move. One move per message.",
           }
         : null,
@@ -381,10 +438,13 @@ export function compactContext(ctx: LeadContext): string {
       how_cassey_wants_this_written: ctx.coaching
         ? {
             rules_from_cassey: ctx.coaching.rules,
-            approved_examples: ctx.coaching.examples,
+            coaching_for_this_situation: ctx.coaching.examples,
+            selected_from: ctx.coaching.considered,
             messages_cassey_actually_sent: ctx.coaching.live_messages,
             precedence: ctx.coaching.precedence,
             note: ctx.coaching.note,
+            examples_note:
+              "These were chosen because they match this situation — the move, the temperature, the state of the conversation. Where an example carries `avoid` and `because`, that draft was rejected for that reason: do not reproduce it.",
           }
         : null,
       voice_examples: ctx.examples.voice_examples.map((c) => ({ setter: c.setter_name, content: c.content })),

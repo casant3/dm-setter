@@ -14,6 +14,12 @@ import type { CoachingExample, SetterPreference } from "@/lib/types";
 
 type Payload = { preferences: SetterPreference[]; examples: CoachingExample[]; pending: number };
 
+/** The last attempt in a correction chain — the natural starting point for approval. */
+function lastRevision(example: CoachingExample): string | null {
+  const revisions = example.revisions ?? [];
+  return revisions.length > 0 ? revisions[revisions.length - 1].reply : null;
+}
+
 const TIERS = [
   "1. Rules from Cassey — override everything below",
   "2. Approved coaching examples — the shape of the reply",
@@ -189,14 +195,41 @@ export function CoachingPanel({ onClose }: { onClose: () => void }) {
             {pendingExamples.map((example) => (
               <div key={example.id} style={{ padding: "10px 0", borderBottom: "1px solid var(--border-soft)" }}>
                 <span className="pill">{example.source.replace(/_/g, " ")}</span>
+                <span className="pill">{example.kind?.replace(/_/g, " ") ?? "example"}</span>
+                {(example.tags ?? []).map((tag) => (
+                  <span key={tag} className="pill">
+                    {tag.replace(/_/g, " ")}
+                  </span>
+                ))}
                 <p className="muted" style={{ margin: "6px 0 2px" }}>{example.situation}</p>
                 {example.prospect_message && (
                   <p className="muted" style={{ margin: "0 0 6px" }}>They said: {example.prospect_message.slice(0, 240)}</p>
                 )}
+
+                {/* The correction itself: what was written, and what was wrong with it. */}
+                {(example.revisions ?? []).length > 0 ? (
+                  <ol className="list" style={{ margin: "0 0 8px" }}>
+                    {example.revisions.map((revision, i) => (
+                      <li key={i}>
+                        <div style={{ opacity: 0.75 }}>{revision.reply}</div>
+                        {revision.feedback && <div className="muted">You said: “{revision.feedback}”</div>}
+                      </li>
+                    ))}
+                  </ol>
+                ) : (
+                  example.rejected_reply && (
+                    <p className="muted" style={{ margin: "0 0 8px" }}>
+                      Rejected: {example.rejected_reply.slice(0, 300)}
+                      {example.operator_feedback ? ` — you said “${example.operator_feedback}”` : ""}
+                    </p>
+                  )
+                )}
+
                 <textarea
-                  value={drafts[example.id] ?? example.approved_reply}
+                  value={drafts[example.id] ?? example.approved_reply ?? lastRevision(example) ?? ""}
                   onChange={(e) => setDrafts({ ...drafts, [example.id]: e.target.value })}
                   style={{ width: "100%", minHeight: 80 }}
+                  placeholder="The wording you want followed in this situation"
                   aria-label="Approved reply"
                 />
                 <div className="dialog-actions">
@@ -206,7 +239,14 @@ export function CoachingPanel({ onClose }: { onClose: () => void }) {
                   <button
                     className="btn good"
                     disabled={busy}
-                    onClick={() => decide(example.id, "example", "approve", drafts[example.id] ?? example.approved_reply)}
+                    onClick={() =>
+                      decide(
+                        example.id,
+                        "example",
+                        "approve",
+                        drafts[example.id] ?? example.approved_reply ?? lastRevision(example) ?? "",
+                      )
+                    }
                   >
                     Use as an example
                   </button>
@@ -242,6 +282,7 @@ export function CoachingPanel({ onClose }: { onClose: () => void }) {
               <div key={e.id} className="example">
                 <span className="muted">{e.situation}</span>
                 <div>{e.approved_reply}</div>
+                {e.operator_feedback && <div className="muted">Instead of: “{e.operator_feedback}”</div>}
               </div>
             ))}
           </div>

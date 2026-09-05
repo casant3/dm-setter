@@ -113,8 +113,18 @@ export function MemoryPanel({
 
       {memory.relationship_summary && (
         <div className="card">
-          <h3>Relationship</h3>
-          <p style={{ margin: 0 }}>{memory.relationship_summary}</p>
+          <h3>
+            Relationship
+            <span className="pill" style={{ marginLeft: 8 }}>
+              {memory.relationship_summary.verified ? "confirmed by you" : "the model's reading"}
+            </span>
+          </h3>
+          <p style={{ margin: 0 }}>{memory.relationship_summary.value}</p>
+          {!memory.relationship_summary.verified && (
+            <p className="muted" style={{ margin: "6px 0 0" }}>
+              An interpretation, not something they said. Correct it to make it fact.
+            </p>
+          )}
         </div>
       )}
 

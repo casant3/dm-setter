@@ -55,6 +55,33 @@ export function emptyMemory(leadId: string): LeadMemory {
   } as LeadMemory;
 }
 
+/**
+ * Reads a narrative field, whatever shape it is stored in.
+ *
+ * `relationship_summary` and `communication_style` were plain text before they
+ * carried provenance. A bare string is an unattributed model interpretation, so
+ * that is exactly what it becomes.
+ */
+export function narrativeItem(value: unknown): MemoryItem | null {
+  if (!value) return null;
+  if (typeof value === "string") {
+    const text = value.trim();
+    if (!text) return null;
+    return {
+      value: text,
+      provenance: "inference",
+      confidence: 0.4,
+      source_message_id: null,
+      quote: null,
+      source_ref: null,
+      recorded_at: new Date(0).toISOString(),
+      verified: false,
+    };
+  }
+  const item = value as MemoryItem;
+  return typeof item?.value === "string" ? item : null;
+}
+
 export function makeItem(
   value: string,
   provenance: Provenance,
@@ -292,12 +319,18 @@ export function applyHumanCorrection(
     verified.add(field);
   }
 
+  // A person writing the summary makes it a human-verified item rather than the
+  // model's reading — and automatic extraction then leaves it alone entirely.
   if (corrections.relationship_summary !== undefined) {
-    patch.relationship_summary = corrections.relationship_summary;
+    patch.relationship_summary = corrections.relationship_summary
+      ? makeItem(corrections.relationship_summary, "human", { verified: true, confidence: 1 })
+      : null;
     verified.add("relationship_summary");
   }
   if (corrections.communication_style !== undefined) {
-    patch.communication_style = corrections.communication_style;
+    patch.communication_style = corrections.communication_style
+      ? makeItem(corrections.communication_style, "human", { verified: true, confidence: 1 })
+      : null;
     verified.add("communication_style");
   }
   if (corrections.service_understanding !== undefined && corrections.service_understanding !== null) {

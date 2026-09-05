@@ -2,7 +2,15 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { api, type AppStatus, type LeadDetail } from "@/lib/client";
-import type { AgentResult, Lead, LeadListItem, NewLeadInput, Sender, SuggestionFeedback } from "@/lib/types";
+import type {
+  AgentResult,
+  Lead,
+  LeadListItem,
+  NewLeadInput,
+  OutboundAccount,
+  Sender,
+  SuggestionFeedback,
+} from "@/lib/types";
 import { ConversationView } from "@/components/ConversationView";
 import { CoachingPanel } from "@/components/CoachingPanel";
 import { CorpusPanel } from "@/components/CorpusPanel";
@@ -11,10 +19,17 @@ import { CopilotPanel } from "@/components/CopilotPanel";
 import { ImportDialog } from "@/components/ImportDialog";
 import { LeadsSidebar } from "@/components/LeadsSidebar";
 import { NewLeadDialog } from "@/components/NewLeadDialog";
+import { AccountsPanel } from "@/components/AccountsPanel";
+import { SheetImportPanel } from "@/components/SheetImportPanel";
+import { MobileWorkspace } from "@/components/MobileWorkspace";
+import { useIsMobile } from "@/components/useMediaQuery";
 
 export function Workspace() {
   const [status, setStatus] = useState<AppStatus | null>(null);
   const [leads, setLeads] = useState<LeadListItem[]>([]);
+  const [accounts, setAccounts] = useState<OutboundAccount[]>([]);
+  /** `undefined` = every account. */
+  const [accountId, setAccountId] = useState<string | undefined>(undefined);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [detail, setDetail] = useState<LeadDetail | null>(null);
   const [result, setResult] = useState<AgentResult | null>(null);
@@ -28,11 +43,17 @@ export function Workspace() {
   const [showImport, setShowImport] = useState(false);
   const [showCorpus, setShowCorpus] = useState(false);
   const [showCoaching, setShowCoaching] = useState(false);
+  const [showAccounts, setShowAccounts] = useState(false);
+  const [showSheetImport, setShowSheetImport] = useState(false);
   const [rightTab, setRightTab] = useState<"copilot" | "memory">("copilot");
+  const isMobile = useIsMobile();
 
   const refreshLeads = useCallback(async () => {
-    const { leads: next } = await api.listLeads();
+    // The whole inbox is fetched and filtered client-side: switching account
+    // then has to be instant, which is what the phone workflow needs.
+    const { leads: next, accounts: nextAccounts } = await api.listLeads();
     setLeads(next);
+    if (nextAccounts) setAccounts(nextAccounts.filter((a) => a.active));
     return next;
   }, []);
 
@@ -115,12 +136,67 @@ export function Workspace() {
     await refreshDetail(selectedId);
   };
 
-  const createLead = async (input: NewLeadInput) => {
+  const createLead = async (input: NewLeadInput & { acknowledge_duplicate?: boolean }) => {
     const { lead } = await api.createLead(input);
     await refreshLeads();
     setSelectedId(lead.id);
     setShowNewLead(false);
   };
+
+  const accountFor = (lead: Lead | null | undefined): OutboundAccount | null =>
+    lead?.outbound_account_id ? accounts.find((a) => a.id === lead.outbound_account_id) ?? null : null;
+
+  const signOut = async () => {
+    await fetch("/api/auth", { method: "DELETE" });
+    window.location.href = "/login";
+  };
+
+  // A phone gets a different application, not a squeezed one: the columns become
+  // screens, and the reply the operator has to copy is the main thing on screen.
+  if (isMobile) {
+    return (
+      <>
+        <MobileWorkspace
+          status={status}
+          leads={leads}
+          accounts={accounts}
+          accountId={accountId}
+          onAccountChange={setAccountId}
+          selectedId={selectedId}
+          onSelect={setSelectedId}
+          detail={detail}
+          result={result}
+          generating={generating}
+          loadingLeads={loadingLeads}
+          genError={genError}
+          topError={topError}
+          onGenerate={(msg) => void generate(msg)}
+          onAddMessage={addMessage}
+          onFeedback={sendFeedback}
+          onUpdateLead={updateLead}
+          onCreateLead={createLead}
+          onCorrectMemory={correctMemory}
+          onSignOut={signOut}
+          onManageAccounts={() => setShowAccounts(true)}
+        onImportLeads={() => setShowSheetImport(true)}
+          onAccountsChanged={() => void refreshLeads()}
+          accountFor={accountFor}
+        />
+        {/* Dialogs live outside the screen switcher so they can open from any
+            screen — the accounts panel is reachable from the inbox. */}
+        {showAccounts && (
+          <AccountsPanel onClose={() => setShowAccounts(false)} onChanged={() => void refreshLeads()} />
+        )}
+        {showSheetImport && (
+          <SheetImportPanel
+            accounts={accounts}
+            onClose={() => setShowSheetImport(false)}
+            onImported={() => void refreshLeads()}
+          />
+        )}
+      </>
+    );
+  }
 
   return (
     <div className="app">
@@ -138,15 +214,11 @@ export function Workspace() {
         )}
         <span className="spacer" />
         {topError && <span className="error">{topError}</span>}
+        <button className="btn small ghost" onClick={() => setShowAccounts(true)}>Accounts</button>
+        <button className="btn small ghost" onClick={() => setShowSheetImport(true)}>Import leads</button>
         <button className="btn small ghost" onClick={() => setShowCoaching(true)}>Coaching</button>
         <button className="btn small ghost" onClick={() => setShowCorpus(true)}>Corpus</button>
-        <button
-          className="btn small ghost"
-          onClick={async () => {
-            await fetch("/api/auth", { method: "DELETE" });
-            window.location.href = "/login";
-          }}
-        >
+        <button className="btn small ghost" onClick={() => void signOut()}>
           Sign out
         </button>
       </header>
@@ -154,6 +226,9 @@ export function Workspace() {
       <div className="columns">
         <LeadsSidebar
           leads={leads}
+          accounts={accounts}
+          accountId={accountId}
+          onAccountChange={setAccountId}
           selectedId={selectedId}
           onSelect={setSelectedId}
           onNewLead={() => setShowNewLead(true)}
@@ -163,6 +238,7 @@ export function Workspace() {
         {detail ? (
           <ConversationView
             lead={detail.lead}
+            account={accountFor(detail.lead)}
             messages={detail.messages}
             onUpdateLead={updateLead}
             onAddMessage={addMessage}
@@ -217,9 +293,26 @@ export function Workspace() {
         )}
       </div>
 
+      {showAccounts && (
+        <AccountsPanel onClose={() => setShowAccounts(false)} onChanged={() => void refreshLeads()} />
+      )}
+      {showSheetImport && (
+        <SheetImportPanel
+          accounts={accounts}
+          onClose={() => setShowSheetImport(false)}
+          onImported={() => void refreshLeads()}
+        />
+      )}
       {showCorpus && <CorpusPanel onClose={() => setShowCorpus(false)} />}
       {showCoaching && <CoachingPanel onClose={() => setShowCoaching(false)} />}
-      {showNewLead && <NewLeadDialog onClose={() => setShowNewLead(false)} onCreate={createLead} />}
+      {showNewLead && (
+        <NewLeadDialog
+          onClose={() => setShowNewLead(false)}
+          onCreate={createLead}
+          accounts={accounts}
+          defaultAccountId={accountId ?? null}
+        />
+      )}
       {showImport && detail && (
         <ImportDialog
           lead={detail.lead}

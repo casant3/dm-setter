@@ -721,3 +721,625 @@ textarea:focus {
     grid-template-columns: 260px minmax(0, 1fr) 340px;
   }
 }
+
+/* ---------------------------------------------------------------------------
+   Desktop additions for outbound accounts
+   --------------------------------------------------------------------------- */
+
+.account-line {
+  margin: 6px 0 4px;
+  font-size: 12px;
+  color: var(--text-dim);
+  padding: 4px 8px;
+  border-radius: 6px;
+  background: var(--accent-soft);
+  display: inline-block;
+}
+
+.account-line strong {
+  color: var(--text);
+}
+
+.warn-box {
+  margin-top: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--warn);
+  background: var(--warn-soft);
+  border-radius: var(--radius);
+}
+
+/* ---------------------------------------------------------------------------
+   The phone application
+   ---------------------------------------------------------------------------
+   Not the desktop layout at a smaller width: a different navigation model, with
+   the reply that has to be copied as the largest thing on the screen. Touch
+   targets on the repeated actions — copy, generate, add reply, feedback — are
+   all at least 48px, because they are pressed hundreds of times a day.
+   --------------------------------------------------------------------------- */
+
+.m-app {
+  display: flex;
+  flex-direction: column;
+  min-height: 100svh;
+  background: var(--bg);
+}
+
+.m-header {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  background: var(--panel);
+  border-bottom: 1px solid var(--border);
+  padding: calc(8px + env(safe-area-inset-top)) 12px 8px;
+}
+
+.m-header-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 40px;
+}
+
+.m-header h1 {
+  margin: 0;
+  font-size: 20px;
+}
+
+.m-title {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.25;
+  min-width: 0;
+}
+
+.m-title strong {
+  font-size: 16px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.m-title span {
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.m-back {
+  font-size: 28px;
+  line-height: 1;
+  width: 44px;
+  height: 44px;
+  background: none;
+  border: none;
+  color: var(--text);
+  margin-left: -8px;
+}
+
+.m-link {
+  background: none;
+  border: none;
+  color: var(--accent);
+  font-size: 14px;
+  min-height: 44px;
+  padding: 0 8px;
+}
+
+/* Account identity — deliberately loud. */
+.m-account {
+  margin-top: 6px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--accent-soft);
+  color: var(--text-dim);
+  font-size: 13px;
+}
+
+.m-account strong {
+  color: var(--text);
+}
+
+.m-account.warn {
+  background: var(--warn-soft);
+}
+
+.m-tabs,
+.m-chips {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  padding: 8px 0 2px;
+  scrollbar-width: none;
+}
+
+.m-tabs::-webkit-scrollbar,
+.m-chips::-webkit-scrollbar {
+  display: none;
+}
+
+.m-tab,
+.m-chip {
+  flex: 0 0 auto;
+  min-height: 40px;
+  padding: 0 14px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--panel-2);
+  color: var(--text-dim);
+  font-size: 14px;
+}
+
+.m-tab[aria-pressed="true"],
+.m-chip[aria-pressed="true"] {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  color: var(--text);
+}
+
+.m-search {
+  width: 100%;
+  margin-top: 8px;
+  min-height: 48px;
+  font-size: 16px; /* 16px keeps Android/iOS from zooming on focus */
+  padding: 0 12px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--panel-2);
+  color: var(--text);
+}
+
+.m-list {
+  flex: 1;
+  overflow-y: auto;
+  padding-bottom: calc(96px + env(safe-area-inset-bottom));
+}
+
+.m-lead {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 14px 14px;
+  min-height: 72px;
+  background: none;
+  border: none;
+  border-bottom: 1px solid var(--border-soft);
+  color: var(--text);
+}
+
+.m-lead-top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.m-lead-name {
+  font-size: 16px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.m-lead-time,
+.m-lead-sub {
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.m-lead-preview {
+  margin-top: 4px;
+  font-size: 14px;
+  color: var(--text-dim);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.m-fab {
+  position: fixed;
+  right: 16px;
+  bottom: calc(20px + env(safe-area-inset-bottom));
+  width: 60px;
+  height: 60px;
+  border-radius: 50%;
+  border: none;
+  background: var(--accent);
+  color: #fff;
+  font-size: 30px;
+  line-height: 1;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.4);
+  z-index: 30;
+}
+
+/* --- conversation --- */
+
+.m-thread {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px 12px calc(150px + env(safe-area-inset-bottom));
+}
+
+.m-msg {
+  max-width: 88%;
+  margin-bottom: 10px;
+  padding: 10px 12px;
+  border-radius: 14px;
+  font-size: 15px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.m-msg.prospect {
+  background: var(--panel-2);
+  border: 1px solid var(--border-soft);
+}
+
+.m-msg.setter {
+  margin-left: auto;
+  background: var(--accent-soft);
+  border: 1px solid var(--accent);
+}
+
+.m-msg.system {
+  margin: 0 auto 10px;
+  background: none;
+  border: 1px dashed var(--border);
+  color: var(--text-dim);
+  font-size: 13px;
+}
+
+.m-msg-meta {
+  margin-top: 4px;
+  font-size: 11px;
+  color: var(--text-faint);
+}
+
+.m-reply {
+  margin-top: 14px;
+  padding: 12px;
+  border-radius: 14px;
+  border: 1px solid var(--accent);
+  background: var(--panel);
+}
+
+.m-reply-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--text-dim);
+  margin-bottom: 8px;
+}
+
+.m-reply-text {
+  width: 100%;
+  font-size: 16px;
+  line-height: 1.5;
+  padding: 12px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--panel-2);
+  color: var(--text);
+  resize: vertical;
+}
+
+.m-copy {
+  width: 100%;
+  min-height: 56px;
+  margin-top: 10px;
+  border: none;
+  border-radius: 12px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 17px;
+  font-weight: 600;
+}
+
+.m-copy:active {
+  transform: translateY(1px);
+}
+
+.m-feedback {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.m-fb {
+  min-height: 48px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--panel-2);
+  color: var(--text);
+  font-size: 14px;
+}
+
+.m-fb.good {
+  border-color: var(--good);
+  color: var(--good);
+}
+
+.m-fb.bad {
+  border-color: var(--bad);
+  color: var(--bad);
+}
+
+.m-actions {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 25;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  padding: 10px 12px calc(10px + env(safe-area-inset-bottom));
+  background: var(--panel);
+  border-top: 1px solid var(--border);
+}
+
+.m-action {
+  min-height: 52px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--panel-2);
+  color: var(--text);
+  font-size: 16px;
+  font-weight: 500;
+}
+
+.m-action.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+.m-latest {
+  position: fixed;
+  left: 12px;
+  right: 12px;
+  bottom: calc(80px + env(safe-area-inset-bottom));
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: var(--raised);
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  font-size: 13px;
+  z-index: 24;
+}
+
+/* --- add-reply sheet --- */
+
+.m-sheet {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: flex;
+  align-items: flex-end;
+  background: rgba(0, 0, 0, 0.55);
+}
+
+.m-sheet-body {
+  width: 100%;
+  background: var(--panel);
+  border-top-left-radius: 18px;
+  border-top-right-radius: 18px;
+  padding: 12px 12px calc(12px + env(safe-area-inset-bottom));
+  /* The keyboard shrinks the visual viewport; the sheet stays above it. */
+  max-height: 90svh;
+  overflow-y: auto;
+}
+
+.m-sheet-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.m-sheet-text {
+  width: 100%;
+  font-size: 16px;
+  line-height: 1.5;
+  padding: 12px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--panel-2);
+  color: var(--text);
+}
+
+.m-sheet-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+/* --- details --- */
+
+.m-details {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px 12px calc(40px + env(safe-area-inset-bottom));
+}
+
+.m-collapse {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  margin-bottom: 10px;
+  background: var(--panel);
+}
+
+.m-collapse > summary {
+  min-height: 52px;
+  display: flex;
+  align-items: center;
+  padding: 0 14px;
+  font-size: 15px;
+  font-weight: 500;
+  cursor: pointer;
+  list-style: none;
+}
+
+.m-collapse > summary::-webkit-details-marker {
+  display: none;
+}
+
+.m-collapse > summary::after {
+  content: "▾";
+  margin-left: auto;
+  color: var(--text-dim);
+}
+
+.m-collapse[open] > summary::after {
+  content: "▴";
+}
+
+.m-collapse-body {
+  padding: 0 14px 14px;
+}
+
+.m-note {
+  margin: 0 0 6px;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.m-note.muted {
+  color: var(--text-dim);
+  font-size: 13px;
+}
+
+.m-pad {
+  padding: 0 12px;
+}
+
+.m-empty-line {
+  padding: 24px 16px;
+  color: var(--text-dim);
+  text-align: center;
+}
+
+.m-empty {
+  padding: 40px 16px;
+  text-align: center;
+}
+
+/* The dialogs are shared with desktop; on a phone they become full-height sheets. */
+@media (max-width: 899px) {
+  .overlay {
+    align-items: flex-end;
+    padding: 0;
+  }
+
+  .dialog {
+    width: 100%;
+    max-width: none;
+    max-height: 92svh;
+    border-radius: 18px 18px 0 0;
+    overflow-y: auto;
+  }
+
+  .form-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .dialog input,
+  .dialog select,
+  .dialog textarea {
+    min-height: 48px;
+    font-size: 16px;
+  }
+
+  .dialog-actions .btn {
+    min-height: 48px;
+    flex: 1;
+  }
+}
+
+.m-install {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 10px 12px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--panel-2);
+  font-size: 13px;
+  color: var(--text-dim);
+}
+
+.account-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border-soft);
+}
+
+@media (max-width: 899px) {
+  .account-row .btn {
+    min-height: 44px;
+  }
+}
+
+/* Three actions rather than two once screenshots are in the loop. */
+.m-actions.three {
+  grid-template-columns: 1fr 1fr 1fr;
+}
+
+.m-actions.three .m-action {
+  font-size: 15px;
+}
+
+.shot-line {
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border-soft);
+}
+
+.shot-line-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+
+.shot-line textarea {
+  width: 100%;
+  font-size: 16px;
+  line-height: 1.45;
+  padding: 10px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--panel-2);
+  color: var(--text);
+}
+
+/* An optional section of a form, shut by default.
+   The fields inside are never required and nothing in the pipeline depends on
+   them, so they should cost no attention until they are wanted. */
+.form-optional {
+  margin-top: 12px;
+  border-top: 1px solid var(--border-soft);
+  padding-top: 10px;
+}
+.form-optional > summary {
+  cursor: pointer;
+  color: var(--text-dim);
+  font-size: 13px;
+  padding: 6px 0;
+  min-height: 32px;
+  list-style: none;
+}
+.form-optional > summary::-webkit-details-marker { display: none; }
+.form-optional > summary::before {
+  content: "▸ ";
+  display: inline-block;
+  transition: transform 0.12s ease;
+}
+.form-optional[open] > summary::before { content: "▾ "; }
+.form-optional > summary:hover { color: var(--text); }
+.form-optional > .form-grid { margin-top: 8px; }

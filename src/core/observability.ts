@@ -15,6 +15,8 @@ export type OpRecord = {
   count?: number;
   cached?: boolean;
   error?: string;
+  /** Extra counters for this op. Counts only — never text. */
+  extra?: Record<string, number>;
 };
 
 const listeners: ((record: OpRecord) => void)[] = [];
@@ -36,6 +38,7 @@ export function record(rec: OpRecord): void {
   if (rec.tokens_out != null) parts.push(`tout=${rec.tokens_out}`);
   if (rec.count != null) parts.push(`n=${rec.count}`);
   if (rec.cached) parts.push("cached=1");
+  for (const [key, value] of Object.entries(rec.extra ?? {})) parts.push(`${key}=${value}`);
   if (rec.error) parts.push(`error=${rec.error.slice(0, 80)}`);
   console.info(`[dm-setter] ${parts.join(" ")}`);
 }

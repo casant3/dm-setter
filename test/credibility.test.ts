@@ -6,6 +6,7 @@ import type { CredibilityAsset, Lead, Strategy } from "@/lib/types";
 const lead: Lead = {
   id: "l1",
   instagram_handle: "founder",
+  outbound_account_id: null,
   name: null,
   company: null,
   job_title: null,

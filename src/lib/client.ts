@@ -9,6 +9,7 @@ import type {
   LeadMemory,
   Message,
   NewLeadInput,
+  OutboundAccount,
   Sender,
   SuggestionFeedback,
 } from "@/lib/types";
@@ -46,15 +47,65 @@ export type ImportPreview = {
   counts: { total: number; setter: number; prospect: number };
 };
 
+/** A prospect already being contacted from another page. */
+export type DuplicateWarning = {
+  severity: "blocked" | "warn" | "none";
+  message: string;
+  can_proceed: boolean;
+  matches: { lead_id: string; account_handle: string | null; conversation_stage: string | null }[];
+};
+
+export class DuplicateProspectError extends Error {
+  constructor(readonly duplicate: DuplicateWarning) {
+    super(duplicate.message);
+    this.name = "DuplicateProspectError";
+  }
+}
+
 export const api = {
   status: () => request<AppStatus>("/api/status"),
 
-  listLeads: () => request<{ leads: LeadListItem[]; store_mode: string }>("/api/leads"),
+  listAccounts: (includeInactive = false) =>
+    request<{ accounts: OutboundAccount[] }>(`/api/accounts${includeInactive ? "?all=1" : ""}`),
+
+  createAccount: (input: { handle: string; display_name?: string | null; notes?: string | null }) =>
+    request<{ account: OutboundAccount }>("/api/accounts", { method: "POST", body: JSON.stringify(input) }),
+
+  updateAccount: (id: string, patch: { display_name?: string | null; active?: boolean; notes?: string | null }) =>
+    request<{ account: OutboundAccount }>(`/api/accounts/${id}`, { method: "PATCH", body: JSON.stringify(patch) }),
+
+  listLeads: (accountId?: string | null) =>
+    request<{ leads: LeadListItem[]; accounts: OutboundAccount[]; store_mode: string }>(
+      `/api/leads${accountId ? `?account=${encodeURIComponent(accountId)}` : ""}`,
+    ),
 
   getLead: (id: string) => request<LeadDetail>(`/api/leads/${id}`),
 
-  createLead: (input: NewLeadInput) =>
-    request<{ lead: Lead }>("/api/leads", { method: "POST", body: JSON.stringify(input) }),
+  /**
+   * Creates a lead.
+   *
+   * Throws `DuplicateProspectError` when the same prospect is already being
+   * contacted from another page — the operator has to see that before a second
+   * page messages someone, and can then retry with `acknowledge_duplicate`.
+   */
+  createLead: async (input: NewLeadInput & { acknowledge_duplicate?: boolean }) => {
+    const res = await fetch("/api/leads", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(input),
+    });
+    const payload = (await res.json().catch(() => ({}))) as {
+      lead?: Lead;
+      error?: string;
+      duplicate?: DuplicateWarning;
+      requires_acknowledgement?: boolean;
+    };
+    if (res.status === 409 && payload.requires_acknowledgement && payload.duplicate) {
+      throw new DuplicateProspectError(payload.duplicate);
+    }
+    if (!res.ok) throw new Error(payload.error ?? `Request failed (${res.status})`);
+    return payload as { lead: Lead; duplicate: DuplicateWarning | null };
+  },
 
   updateLead: (id: string, patch: Partial<Lead>) =>
     request<{ lead: Lead }>(`/api/leads/${id}`, { method: "PATCH", body: JSON.stringify(patch) }),
@@ -79,6 +130,55 @@ export const api = {
     request<{ suggestion: AiSuggestion }>(`/api/suggestions/${suggestionId}/feedback`, {
       method: "POST",
       body: JSON.stringify({ feedback, ...options }),
+    }),
+
+  // --- lead sheet import ---------------------------------------------------
+
+  sheetImportStatus: () =>
+    request<{ service_account: boolean; service_account_email: string | null; note: string }>(
+      "/api/leads/import-sheet",
+    ),
+
+  previewSheet: (input: { sheet_url?: string; csv?: string; outbound_account_id?: string | null; year?: number }) =>
+    request<{
+      summary: {
+        source: string;
+        days_with_leads: number;
+        empty_days: number;
+        blocks: string[];
+        found: number;
+        repeated_in_sheet: number;
+        new: number;
+        already_in_pipeline: number;
+        also_on_another_account: number;
+        unreadable_cells: number;
+      };
+      sample: { instagram_handle: string; note: string | null; source_date: string | null }[];
+      skipped: { raw: string; reason: string }[];
+      note: string;
+    }>("/api/leads/import-sheet", { method: "POST", body: JSON.stringify(input) }),
+
+  commitSheet: (input: { sheet_url?: string; csv?: string; outbound_account_id: string; year?: number }) =>
+    request<{ imported: number; skipped: number; account: string | null; note: string }>("/api/leads/import-sheet", {
+      method: "POST",
+      body: JSON.stringify({ ...input, commit: true }),
+    }),
+
+  // --- screenshots ---------------------------------------------------------
+
+  readScreenshot: (id: string, image: string) =>
+    request<{
+      lines: { sender: Sender; text: string; confidence: "high" | "low"; partial: boolean }[];
+      already_in_thread: number;
+      unreadable: string[];
+      needs_review: boolean;
+      note: string;
+    }>(`/api/leads/${id}/screenshot`, { method: "POST", body: JSON.stringify({ image }) }),
+
+  addScreenshotLines: (id: string, lines: { sender: Sender; text: string }[]) =>
+    request<{ added: number; note: string }>(`/api/leads/${id}/screenshot`, {
+      method: "POST",
+      body: JSON.stringify({ lines, commit: true }),
     }),
 
   previewImport: (id: string, transcript: string, label_overrides?: Record<string, Sender>) =>

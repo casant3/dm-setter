@@ -6,6 +6,7 @@ export const dynamic = "force-dynamic";
 
 type Body = {
   kind: "rule" | "example";
+  applies_when?: Record<string, string[]> | null;
   rule?: string;
   applies_to?: string | null;
   priority?: number;
@@ -78,13 +79,18 @@ export async function POST(request: Request) {
       return ok({
         example: await store.createCoachingExample({
           setter_name: setter,
+          kind: "good_example",
           situation,
           prospect_message: body.prospect_message?.trim() || null,
+          rejected_reply: null,
+          operator_feedback: null,
           approved_reply: reply,
+          revisions: [],
           why: body.why?.trim() || null,
           source: "human",
           status: "approved",
           tags: body.tags ?? [],
+          applies_when: body.applies_when ?? null,
           approved_at: now,
         }),
       });

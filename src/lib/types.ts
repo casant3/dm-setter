@@ -58,12 +58,56 @@ export const TIER_EVIDENCE: Record<OutcomeTier, EvidenceClass> = {
 };
 
 // ---------------------------------------------------------------------------
+// Outbound accounts
+// ---------------------------------------------------------------------------
+
+/**
+ * An account we send from.
+ *
+ * Outreach now runs from more than one Instagram page, and which page a
+ * conversation belongs to changes what may be said in it: the same prospect can
+ * legitimately be in two threads, but the two threads are not one conversation
+ * and must never be merged. This is attribution only — no credentials, no
+ * sending, no login.
+ */
+export type OutboundAccount = {
+  id: string;
+  platform: string;
+  /** Without the @. Unique per platform. */
+  handle: string;
+  display_name: string | null;
+  active: boolean;
+  notes: string | null;
+  created_at: string;
+};
+
+/**
+ * The account historical conversations are attributed to.
+ *
+ * The Trello corpus does not record which page sent each thread. Guessing would
+ * put false attribution into analytics that decisions are made from, so those
+ * conversations are attributed to an explicit unknown account instead.
+ */
+export const LEGACY_ACCOUNT_HANDLE = "unknown_legacy";
+export const LEGACY_ACCOUNT_NAME = "Unknown / legacy (before account tracking)";
+
+export type NewOutboundAccount = {
+  platform?: string;
+  handle: string;
+  display_name?: string | null;
+  active?: boolean;
+  notes?: string | null;
+};
+
+// ---------------------------------------------------------------------------
 // Leads and messages
 // ---------------------------------------------------------------------------
 
 export type Lead = {
   id: string;
   instagram_handle: string;
+  /** Which of our accounts is talking to this prospect. */
+  outbound_account_id: string | null;
   name: string | null;
   company: string | null;
   job_title: string | null;
@@ -71,6 +115,8 @@ export type Lead = {
   niche: string | null;
   followers: number | null;
   location: string | null;
+  /** Only ever a timezone we were told. Never inferred from location. */
+  timezone?: string | null;
   lead_status: string | null;
   interest_level: string | null;
   conversation_stage: string | null;
@@ -136,9 +182,27 @@ export type MemoryItem = {
   verified?: boolean;
 };
 
+/**
+ * State of the incremental extraction pass, so the same history is not sent to
+ * the model again on every exchange.
+ */
+export type ExtractionState = {
+  /** The last message that has already been considered. */
+  last_message_id: string | null;
+  last_message_at: string | null;
+  /** How many messages have been through extraction in total. */
+  messages_considered: number;
+  last_run_at: string | null;
+};
+
 export type LeadMemory = {
   lead_id: string;
-  relationship_summary: string | null;
+  /**
+   * The model's reading of the relationship. An interpretation, never a fact:
+   * stored with provenance like every other remembered item so it cannot appear
+   * in context as something the prospect said.
+   */
+  relationship_summary: MemoryItem | null;
   facts_known: MemoryItem[];
   /** What we found out about them, which they have not told us themselves. */
   research_facts: MemoryItem[];
@@ -157,8 +221,11 @@ export type LeadMemory = {
   timing_constraints: MemoryItem[];
   followup_commitments: MemoryItem[];
   key_entities: MemoryItem[];
-  communication_style: string | null;
+  /** Also an interpretation — how they write, as read by the model. */
+  communication_style: MemoryItem | null;
   current_strategy: string | null;
+  /** Where incremental memory extraction got to. */
+  extraction_state?: ExtractionState | null;
 
   /** An action we took: we sent an explanation of the business model. */
   service_explained: boolean | null;
@@ -337,12 +404,15 @@ export type AgentResult = {
     violations: { rule: string; detail: string; severity: "hard" | "soft" }[];
     words: number;
   };
-  /** How far into booking this is, and whether the call would be honoured. */
+  /** How far into booking this is, plus the advisory no-show read. */
   booking: {
     state: string;
     next_action: string;
+    /** Concrete times this message should offer, when it is the booking move. */
+    slots: string[];
     no_show_risk: string;
     no_show_factors: string[];
+    /** How to adapt the booking. Never a reason to withhold one. */
     no_show_mitigation: string;
   };
   /** How the prospect is engaging, and what they have already told us. */
@@ -357,6 +427,9 @@ export type AgentResult = {
 };
 
 export type LeadListItem = Lead & {
+  /** Denormalised for the sidebar, so it can label and filter without a join. */
+  outbound_account_handle: string | null;
+  outbound_account_name: string | null;
   message_count: number;
   last_message_at: string | null;
   last_message_preview: string | null;
@@ -366,6 +439,7 @@ export type LeadListItem = Lead & {
 
 export type NewLeadInput = {
   instagram_handle: string;
+  outbound_account_id?: string | null;
   name?: string | null;
   company?: string | null;
   job_title?: string | null;
@@ -444,17 +518,59 @@ export type SetterPreference = {
   created_at: string;
 };
 
-/** A situation-and-reply pair the operator has stood behind. */
+/** What kind of coaching material an example carries. */
+export const COACHING_EXAMPLE_KINDS = [
+  "good_example",
+  "bad_example",
+  "correction_pair",
+  "correction_chain",
+] as const;
+export type CoachingExampleKind = (typeof COACHING_EXAMPLE_KINDS)[number];
+
+/** One draft in a correction chain, with the criticism that followed it. */
+export type CoachingRevision = { reply: string; feedback: string | null; tags: string[] };
+
+/**
+ * When a piece of coaching applies.
+ *
+ * An edit is rarely a universal law: "build more value, no call yet" is advice
+ * about one move at one stage, and applying it to a booking message would be
+ * exactly wrong. Conditions keep an example attached to the situation it came
+ * from so retrieval can rank it rather than dumping everything into the prompt.
+ */
+export type CoachingCondition = {
+  moves?: string[];
+  stages?: string[];
+  temperatures?: string[];
+  booking_states?: string[];
+  brush_offs?: string[];
+  motivations?: string[];
+};
+
+/**
+ * A piece of coaching: a reply the operator stood behind, a draft they rejected,
+ * or the whole chain of corrections between the two.
+ */
 export type CoachingExample = {
   id: string;
   setter_name: string;
+  kind: CoachingExampleKind;
   situation: string;
   prospect_message: string | null;
-  approved_reply: string;
+  /** The draft that was rejected, when this came from a correction. */
+  rejected_reply: string | null;
+  /** The operator's criticism, in their own words. */
+  operator_feedback: string | null;
+  /** The reply to follow. Null until a person has approved one. */
+  approved_reply: string | null;
+  /** Every draft in the chain, oldest first, with what was said about it. */
+  revisions: CoachingRevision[];
   why: string | null;
   source: CoachingSource;
   status: CoachingStatus;
   tags: string[];
+  /** The situation this applies to. Null means it was never scoped. */
+  applies_when: CoachingCondition | null;
   approved_at: string | null;
   created_at: string;
 };

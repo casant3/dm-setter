@@ -105,6 +105,24 @@ by a weaker guess.
 Memory is what makes the product promise work: a fact stated once, forty messages
 ago, still reaches the model even though the recent window holds only 16 messages.
 
+**The narrative fields are interpretations.** `relationship_summary` and
+`communication_style` are written by the model, not said by the prospect, so they
+carry provenance like everything else and are always stored as `inference`. A
+quote that verifies against the real messages raises the confidence and records
+where it came from; it never promotes the reading to a fact. Context renders them
+labelled, with an explicit instruction not to repeat them back as fact and not to
+count them as qualification evidence. "Prospect trusts Cassey" cannot become a
+durable fact on the strength of a polite reply. A person who corrects one stores
+it as `human` / `verified`, and automatic extraction then leaves it alone.
+
+**Extraction is incremental.** `buildExtractionInput` sends only the messages
+since the last run, a short window of context so those messages can still be
+interpreted, and a list of what is already remembered so the same facts are not
+proposed twice. With nothing new, the model is not called at all. Each run
+reports what happened — messages considered, items proposed, quotes verified as
+facts, inferences kept, duplicates ignored, fields skipped because a human had
+corrected them — as counts only; no remembered text ever reaches the log.
+
 ## Historical outcome tiers
 
 `src/core/outcomes.ts`. A booked call is not evidence of a good conversation.
@@ -197,10 +215,36 @@ quoting the conversation, and the quote is verified verbatim before it counts.
 `service_understanding` gets no benefit of the doubt at all.
 
 **Booking** (`src/core/booking.ts`). Six states rather than two, read backwards
-from the furthest reached, plus a no-show risk score. Nearly half the bookings in
-the historical corpus were never honoured; a call agreed quickly by someone who
-never showed they understood what it was for now blocks the proposal instead of
-producing it.
+from the furthest reached, so a conversation that has already had slots offered
+is never sent another pitch for a call.
+
+## Booking is one move, and no-show risk is advice
+
+Once the gate opens, the call and the times go in the same message. "Would you
+like a call?" → "yes" → "here are two times" spends a whole turn collecting an
+answer we already had, and that turn is where bookings are lost. The plan carries
+two concrete slots — next working days, never today, never a weekend, never more
+than a week out — and the audit rejects a draft that asks what day suits instead
+of naming them. A timezone is only ever one the prospect stated or a human
+recorded on the lead; where we do not know it, the prompt says so rather than
+guessing, because an invite an hour out is the same thing as not turning up.
+
+Once a time is picked, the only thing left is the email and the invite:
+re-proposing the call at that point is an audit violation, not a matter of the
+writer remembering.
+
+Nearly half the bookings in the historical corpus were never honoured, and
+`assessNoShowRisk` still scores that risk from what separated the honoured from
+the unhonoured: no evidence they understood what the call was for, no goal of
+their own, no acknowledged gap, a booking agreed in three messages, never having
+asked us anything.
+
+That score is **advisory**. It shapes how explicitly the purpose is framed, which
+times are offered, how much commitment is asked for and how the follow-up is
+handled. It is not a second gate. An earlier version let it forbid `offer_call`
+outright, which meant a prospect who cleared all six dimensions, understood the
+service and asked for the price could still be refused a call because their
+replies were short. Qualification decides *whether*; risk decides *how*.
 
 ## One move per message
 
@@ -239,12 +283,41 @@ Cassey actually sent, which beats a historical one, which beats team strategy,
 which beats the general prompt. The order is stated in the prompt so the model
 knows which source wins when two disagree.
 
-Every edit to a suggestion is read for what it appears to mean and proposed as a
-rule — but proposals are inert. They sit in a review queue with the
+**Retrieval is contextual.** Dumping every approved rule and example into every
+prompt buries whichever one mattered, and advice about building value before a
+call is exactly wrong in the message that books one. Examples are ranked against
+the situation — the move, the temperature, the booking state, the brush-off, the
+motivation frame, whether the service is still misunderstood — with tags doing
+most of the work and an explicit `applies_when` scope overriding them. At most
+four reach the prompt, each carrying why it was selected. Explicit rules stay
+global unless the operator scoped them to a stage.
+
+**Live edits.** Every edit to a suggestion is read for what it appears to mean
+and proposed as a rule: not only structural changes (shorter, question removed,
+CTA added) but also praise cut, an intro dropped, money framing removed or added,
+a CTA softened or hardened, credibility added, service clarity added, a statement
+turned into a question. Proposals are inert. They sit in a review queue with the
 before-and-after they were inferred from and can be reworded on approval, because
-an inferred rule is a guess about what an edit meant. A ChatGPT export is treated
-the same way: it mixes drafts and rejected ideas with messages worth keeping and
-gives no way to tell them apart, so a person does.
+an inferred rule is a guess about what an edit meant.
+
+**ChatGPT imports** (`src/core/chatgpt-import.ts`). An export is a tree, not a
+list: regenerated answers and edited prompts create branches, and reading
+`mapping` in file order can pair a criticism with a draft the operator never saw.
+Paths are reconstructed from parent/child links, ordered by `create_time`, with
+the `current_node` path marked active and every branch kept separate.
+
+The unit worth importing is the whole correction chain — draft, criticism, next
+draft, criticism, and eventually something approved. Assistant messages are not
+approved examples: in a real coaching history most of them are the ones that were
+rejected, so only an explicit approval sets an approved reply, and the API
+refuses to approve a candidate that carries no wording to follow.
+
+Criticism is read into tags — `too_long`, `already_answered`, `premature_cta`,
+`money_frame_wrong`, `gave_up_too_early` and the rest — by deterministic patterns
+for the phrasings the operator actually uses. Anything short and unexplained is
+flagged as needing model judgement rather than guessed at, and a model may only
+fill in a reading the patterns could not produce. Everything imported is
+`pending_review`.
 
 ## Research facts
 
@@ -254,6 +327,30 @@ facts a person has verified may be referenced, and then only as something we
 noticed publicly — never as something they said, never more than one, and never
 in a way that sounds like research. No research fact counts as qualification
 evidence.
+
+## Outbound accounts
+
+`src/core/accounts.ts`, `src/core/funnel.ts`. Which page a conversation belongs
+to is part of the conversation's identity, not a label on it. Two threads with
+the same prospect from two accounts have separate messages, separate memory and
+separate qualification; nothing crosses between them, and the store's handle
+lookup takes an account precisely so that it cannot.
+
+Duplicate outreach is surfaced rather than prevented. The same account opening a
+second thread with someone is refused — that is one conversation, and it already
+exists — but a second *account* reaching the same prospect is a warning the
+operator acknowledges, because a personal page and a brand page both have
+reasons to, and only a person can tell which case this is.
+
+Historical conversations carry an explicit unknown account. The corpus does not
+record which page sent them, and a guess would put false attribution into the
+numbers the operator makes decisions from.
+
+The funnel is derived, never counted: each stage is recomputed from the recorded
+messages, the booking sequence and the outcome, so a stage cannot drift out of
+step with the conversation it describes. Segmenting it by account is the point —
+two pages sending the same volume with different reply rates is a fact about the
+pages, not about the setter.
 
 ## What the model cannot override
 
@@ -266,12 +363,16 @@ Deterministic code owns:
 - what has already been asked and answered;
 - motivation frame, relationship temperature and brush-off classification;
 - which single move the next message makes, and what is forbidden right now;
-- booking state and no-show risk;
+- booking state, the concrete times offered, and the fact that no-show risk
+  cannot block a qualified call;
 - the audit of the draft and of the rewrite;
 - outcome tiers and example bucketing;
 - credibility selection;
 - which transcripts are eligible for retrieval;
-- which coaching material is in force.
+- which coaching material is in force, and which of it is relevant here;
+- which outbound account a conversation belongs to, and that nothing —
+  messages, memory, retrieval — crosses between two accounts' threads;
+- that an imported draft nobody approved never becomes an approved example.
 
 The model proposes; these decide.
 
@@ -284,7 +385,11 @@ Deliberately, because no amount of pattern matching does these well:
 - the reviewer's judgement on substance: whether the value is specific to this
   person, whether it sounds human, whether it is subtly pushy;
 - rich memory extraction — what is worth remembering months from now (every item
-  is still quote-checked before it is recorded as fact);
+  is still quote-checked before it is recorded as fact, and the narrative fields
+  are always stored as inferences);
+- reading an ambiguous piece of operator feedback that no deterministic pattern
+  explains — and even then it can only fill a gap, never overturn a pattern, and
+  every tag it offers must be one of the known tags;
 - transcription of historical screenshots (a person verifies every transcript
   before it can influence a suggestion).
 

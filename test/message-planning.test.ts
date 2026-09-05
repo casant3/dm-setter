@@ -273,7 +273,18 @@ test("an open gate plans the call and allows it", () => {
   );
   assert.equal(p.move, "offer_call");
   assert.ok(!p.forbidden.some((f) => f.move === "offer_call"));
-  assert.equal(auditMoves("Worth a quick call with Avo — what day works this week?", p).violations.length, 0);
+  assert.ok(p.slots.length >= 2, "the plan carries two concrete times to offer");
+  assert.equal(
+    auditMoves(`Worth a quick call with Avo — I've got ${p.slots[0].label} or ${p.slots[1].label}, either work?`, p)
+      .violations.length,
+    0,
+  );
+  // Asking what day suits is the extra turn the operator objected to.
+  assert.ok(
+    auditMoves("Worth a quick call with Avo — what day works this week?", p).violations.some((v) =>
+      /two concrete times/i.test(v),
+    ),
+  );
 });
 
 test("an informed rejection plans a stop, not another attempt", () => {
@@ -442,10 +453,14 @@ test("a booking agreed on politeness alone is flagged as a likely no-show", () =
   });
   assert.equal(risk.risk, "high");
   assert.ok(risk.factors.some((f) => /understand what the call is for/i.test(f)));
-  assert.match(risk.mitigation, /do not book yet/i);
+  // Advisory: it changes how the call is booked, never whether it may be.
+  assert.equal(risk.advisory, true);
+  assert.doesNotMatch(risk.mitigation, /do not book|don'?t book/i);
+  assert.match(risk.mitigation, /book/i);
+  assert.ok(risk.guidance.frame_purpose.length > 0 && risk.guidance.commitment.length > 0);
 });
 
-test("high no-show risk blocks the call even with an open gate", () => {
+test("high no-show risk adapts the booking instead of blocking it", () => {
   const messages = thread(["setter", "worth a chat?"], ["prospect", "sure"]);
   const dialogue = buildDialogueState(messages, null);
   const booking = assessBooking(messages, true);
@@ -464,8 +479,10 @@ test("high no-show risk blocks the call even with an open gate", () => {
       booking,
     }),
   });
-  assert.equal(p.move, "build_value");
-  assert.ok(p.forbidden.some((f) => f.move === "offer_call"));
+  assert.equal(p.move, "offer_call", "qualification is the only gate on offering a call");
+  assert.ok(!p.forbidden.some((f) => f.move === "offer_call"));
+  assert.ok(p.slots.length >= 2);
+  assert.match(p.risk_adaptation ?? "", /no-show risk is high/i);
 });
 
 test("a well-qualified, engaged prospect is a low no-show risk", () => {

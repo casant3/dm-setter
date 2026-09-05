@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { emptyMemory, makeItem } from "@/core/memory";
+import { LEGACY_ACCOUNT_HANDLE, LEGACY_ACCOUNT_NAME } from "@/lib/types";
 import type {
   AiSuggestion,
   CoachingExample,
@@ -9,6 +10,7 @@ import type {
   Lead,
   LeadMemory,
   Message,
+  OutboundAccount,
   SetterPreference,
   SourceConversation,
 } from "@/lib/types";
@@ -29,6 +31,7 @@ function daysAgo(n: number, hour = 12): string {
 
 function lead(partial: Partial<Lead> & Pick<Lead, "id" | "instagram_handle">): Lead {
   return {
+    outbound_account_id: null,
     name: null,
     company: null,
     job_title: null,
@@ -69,14 +72,52 @@ export function seedData(): {
   source_conversations: SourceConversation[];
   setter_preferences: SetterPreference[];
   coaching_examples: CoachingExample[];
+  outbound_accounts: OutboundAccount[];
 } {
   const cody = "11111111-1111-4111-8111-111111111111";
   const mara = "22222222-2222-4222-8222-222222222222";
   const nia = "33333333-3333-4333-8333-333333333333";
 
+  // Two pages doing outreach, plus the explicit unknown account historical
+  // conversations belong to. Attribution only — no credentials live here.
+  const mainAccount = "aaaaaaaa-0000-4000-8000-000000000001";
+  const secondAccount = "aaaaaaaa-0000-4000-8000-000000000002";
+  const legacyAccount = "aaaaaaaa-0000-4000-8000-00000000000f";
+
+  const outbound_accounts: OutboundAccount[] = [
+    {
+      id: mainAccount,
+      platform: "instagram",
+      handle: "cassey.media",
+      display_name: "Cassey — main page",
+      active: true,
+      notes: null,
+      created_at: daysAgo(120),
+    },
+    {
+      id: secondAccount,
+      platform: "instagram",
+      handle: "authority.studio",
+      display_name: "Authority Studio — brand page",
+      active: true,
+      notes: "Second outbound page.",
+      created_at: daysAgo(40),
+    },
+    {
+      id: legacyAccount,
+      platform: "unknown",
+      handle: LEGACY_ACCOUNT_HANDLE,
+      display_name: LEGACY_ACCOUNT_NAME,
+      active: false,
+      notes: "Conversations from before outbound accounts were tracked. Never guess which page sent them.",
+      created_at: daysAgo(365),
+    },
+  ];
+
   const leads: Lead[] = [
     lead({
       id: cody,
+      outbound_account_id: mainAccount,
       instagram_handle: "codyalt",
       name: "Cody Alton",
       company: "Ledgerline",
@@ -99,6 +140,7 @@ export function seedData(): {
     }),
     lead({
       id: mara,
+      outbound_account_id: mainAccount,
       instagram_handle: "marasellsdesign",
       name: "Mara Whitfield",
       company: "Whitfield Studio",
@@ -121,6 +163,7 @@ export function seedData(): {
     }),
     lead({
       id: nia,
+      outbound_account_id: secondAccount,
       instagram_handle: "drniawellness",
       name: "Dr. Nia Okafor",
       company: "Okafor Longevity",
@@ -184,7 +227,10 @@ export function seedData(): {
   const codyMemory: LeadMemory = {
     ...emptyMemory(cody),
     relationship_summary:
+      makeItem(
       "Fintech founder prepping a seed raise. Friendly, informal, replies in short bursts. Has openly admitted he has no search footprint. Currently confused about what the service is.",
+      "inference",
+    ),
     facts_known: [
       makeItem("Raising a seed round in Q3", "fact"),
       makeItem("Multi-entity reconciliation is the product wedge", "fact"),
@@ -200,7 +246,7 @@ export function seedData(): {
       makeItem("How far along are you with the raise you mentioned on your profile?", "fact"),
       makeItem("When investors or prospects look you up right now, what actually comes up?", "fact"),
     ],
-    communication_style: "Casual, lowercase, short replies",
+    communication_style: makeItem("Casual, lowercase, short replies", "inference"),
     current_strategy: "Resolve the podcast/guesting confusion, then rebuild value around the raise",
     service_explained: false,
     service_understanding: 0,
@@ -210,7 +256,10 @@ export function seedData(): {
   const maraMemory: LeadMemory = {
     ...emptyMemory(mara),
     relationship_summary:
+      makeItem(
       "Luxury interior designer launching a high-ticket course in September. Understands the authority argument and has asked about pricing. Warm, thoughtful, writes in full sentences.",
+      "inference",
+    ),
     facts_known: [
       makeItem("Course launches in September", "fact"),
       makeItem("High price point", "fact"),
@@ -229,7 +278,7 @@ export function seedData(): {
     offers_explained: [makeItem("Explained that this is a professional paid media/authority service", "fact")],
     buying_signals: [makeItem("Asked about price", "fact")],
     timing_constraints: [makeItem("Course launch in September", "fact")],
-    communication_style: "Warm, reflective, full sentences",
+    communication_style: makeItem("Warm, reflective, full sentences", "inference"),
     current_strategy: "She is close to call-ready; confirm timing pressure and hand to Avo",
     service_explained: true,
     service_explained_at: daysAgo(5, 14),
@@ -240,7 +289,10 @@ export function seedData(): {
 
   const niaMemory: LeadMemory = {
     ...emptyMemory(nia),
-    relationship_summary: "Opening sent, no reply yet. Longevity clinic director in London.",
+    relationship_summary: makeItem(
+      "Opening sent, no reply yet. Longevity clinic director in London.",
+      "inference",
+    ),
     businesses: [makeItem("Okafor Longevity", "fact")],
     interests: [makeItem("Longevity medicine", "fact")],
     questions_already_asked: [makeItem("Is the clinic the main focus or are you building around it?", "fact")],
@@ -343,6 +395,7 @@ export function seedData(): {
   ];
 
   return {
+    outbound_accounts,
     leads,
     messages,
     memories: [codyMemory, maraMemory, niaMemory],
